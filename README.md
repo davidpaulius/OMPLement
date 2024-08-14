@@ -30,7 +30,7 @@ This is a simple script that you can add to your [CoppeliaSim](https://www.coppe
 
 Your code in Python for instance may look like the following:
 ```
-ompl_script = sim.getScript(sim.scripttype_childscript , self.sim.getObject('/OMPLement'))
+ompl_script = sim.getScript(sim.scripttype_childscript , sim.getObject('/OMPLement'))
 path = sim.callScriptFunction(
 	'path_planning',
 	ompl_script,
