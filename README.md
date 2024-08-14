@@ -7,7 +7,8 @@ This is a simple script that you can add to your [CoppeliaSim](https://www.coppe
 
 ## How to Use?
 
-1. You will need to create a dummy object with a child script (feel free to call it what you want; in this repository, I provide a blank scene with such an object called ```OMPLement```).
+1. You will need to create a dummy object with a child script (feel free to call it what you want). In this child script, you should add everything found in the file ```OMPLement.py```.
+   - Alternatively, in this repository, I provide a blank scene with a dummy object called ```OMPLement```. You can simply copy this object and paste it into your scene.
 
 2. From your code, you will need to call the path planning function from the script using [```sim.callScriptFunction```](https://manual.coppeliarobotics.com/en/regularApi/simCallScriptFunction.htm), which requires:
    - the name of the function you wish to call from the child script (i.e., ```path_planning```)
@@ -17,7 +18,7 @@ This is a simple script that you can add to your [CoppeliaSim](https://www.coppe
 3. The ```path_planning``` function requires a single (Python) dictionary (or its Pythonic equivalent in whatever language you are using) as an argument. This dictionary must have the following entries:
     - ```robot``` - the name of the base of the robot in the CoppeliaSim scene
 	- ```goal``` - the object handle of the target for the robot (perhaps for grasping)
-	- ```num_attempts``` - The maximum number of iterations given for the solver to find a path plan
+	- ```num_attempts``` - the maximum number of iterations given for the solver to find a path plan. Each iteration by default tries to find a solution within 5 seconds. You should tune the arguments for the [```sim.compute```](https://manual.coppeliarobotics.com/en/simOMPL.htm#compute) function (line 162) as you need (e.g., increasing computation time).
     - ```algorithm``` - The name of the [motion planning algorithm/solver](https://ompl.kavrakilab.org/planners.html) to use (by default, ```RRTstar``` will be used); CoppeliaSim has [several OMPL algorithms](https://manual.coppeliarobotics.com/en/simOMPL.htm#enum:Algorithm) available.
 
 
