@@ -22,7 +22,9 @@ This is a simple script that you can add to your [CoppeliaSim](https://www.coppe
     - ```algorithm``` - The name of the [motion planning algorithm/solver](https://ompl.kavrakilab.org/planners.html) to use (by default, ```RRTstar``` will be used); CoppeliaSim has [several OMPL algorithms](https://manual.coppeliarobotics.com/en/simOMPL.htm#enum:Algorithm) available.
 
 
-4. The function will return a list of configurations as ```path```. If successful, ```path``` will be ```N```x```J``` matrix (or 2D list), where ```N``` is the number of points in the path and ```J``` is the total number of joints. You would then need to iterate through this list while setting the configuration of the robot using [```sim.setJointPosition```](https://manual.coppeliarobotics.com/en/regularApi/simSetJointPosition.htm) for each joint. If no solution was found, ```path``` will be empty.
+4. The function will return a list of configurations (referred to as ```path``` in this documentation).
+   - If successful, ```path``` will be ```N```x```J``` matrix (or 2D list), where ```N``` is the number of points in the path and ```J``` is the total number of joints. You would then need to iterate through this list while setting the configuration of the robot using [```sim.setJointPosition```](https://manual.coppeliarobotics.com/en/regularApi/simSetJointPosition.htm) for each joint.
+   - If no solution was found, ```path``` will be empty.
 
 ---
 
