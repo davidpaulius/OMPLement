@@ -65,7 +65,6 @@ def path_planning(args):
     robot_name = args["robot"]
 
     robot = sim.getObject(f'/{robot_name}')
-    tip = sim.getObject(f'/{robot_name}/tip')
 
     # NOTE: we will create a dummy object representing the target for planning!
     # -- extract the goal object given as input to this function:
@@ -74,16 +73,26 @@ def path_planning(args):
 
     pose = sim.getObjectPose(goal, robot)
 
-    if "algorithm" not in args:
-        algorithm = simOMPL.Algorithm.RRTstar
-    else: algorithm = args["algorithm"]
+    algorithm = simOMPL.Algorithm.RRTstar
+    if "algorithm" in args: algorithm = args["algorithm"]
 
-    # -- check if the number of attempts for OMPL to solve a problem has been defined:
-    assert "num_attempts" in args, "[OMPLement] : Number of attempts not defined!"
+    # -- arm_prefix :- you can define the name format for joints (in the case where maybe there is a particular
+    #   set of joints for which you want to do motion planning -- e.g., Spot robot has arm joints separate to legs)
+    if "arm_prefix" in args:
+        joint_prefix = f"/{args['arm_prefix']}_joint"
+        tip = sim.getObject(f"/{args['arm_prefix']}_tip")
+    else:
+        joint_prefix = f"/{robot_name}_joint"
+        tip = sim.getObject(f'/{robot_name}/tip')
 
-    # -- we have this functionality because simOMPL.compute() can reuse previously computed data
+    # -- num_ompl_attempts :- we have this functionality because simOMPL.compute() can reuse previously computed data
     #   Source: https://manual.coppeliarobotics.com/en/pathAndMotionPlanningModules.htm
-    num_ompl_attempts = args["num_attempts"]
+    num_ompl_attempts = 20
+    # -- check if the number of attempts for OMPL to solve a problem has been defined:
+    if "num_attempts" in args: num_ompl_attempts = args["num_attempts"]
+
+    assert robot != -1, "[OMPLement] : Robot base not defined!"
+    assert tip != -1, "[OMPLement] : End-effector tip not defined!"
 
     ################################################################################################
 
@@ -95,7 +104,7 @@ def path_planning(args):
     while True:
         # -- using "noError" so default handle is -1 (if not found);
         #    read more here: https://manual.coppeliarobotics.com/en/regularApi/simGetObject.htm
-        obj_handle = sim.getObject(f'/{robot_name}_joint{num_joints}', {"noError": True})
+        obj_handle = sim.getObject(f'{joint_prefix}{num_joints}', {"noError": True})
 
         if obj_handle == -1: break
 

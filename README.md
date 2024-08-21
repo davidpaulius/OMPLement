@@ -18,8 +18,13 @@ This is a simple script that you can add to your [CoppeliaSim](https://www.coppe
 3. The ```path_planning``` function requires a single (Python) dictionary (or its Pythonic equivalent in whatever language you are using) as an argument. This dictionary must have the following entries:
     - ```robot``` - the name of the base of the robot in the CoppeliaSim scene
 	- ```goal``` - the object handle of the target for the robot (perhaps for grasping)
-	- ```num_attempts``` - the maximum number of iterations given for the solver to find a path plan. Each iteration by default tries to find a solution within 5 seconds. You should tune the arguments for the [```sim.compute```](https://manual.coppeliarobotics.com/en/simOMPL.htm#compute) function (line 162) as you need (e.g., increasing computation time).
     - ```algorithm``` - The name of the [motion planning algorithm/solver](https://ompl.kavrakilab.org/planners.html) to use (by default, ```RRTstar``` will be used); CoppeliaSim has [several OMPL algorithms](https://manual.coppeliarobotics.com/en/simOMPL.htm#enum:Algorithm) available.
+	- ```arm_prefix``` (optional) - this is the name prefix given to joints and tip of the end-effector for which motion planning is being used.
+		- By default, the joints use the format ```<robot_name>_joint<i>```, where ```<robot>``` is the same string given as the ```robot``` argument above and ```<i>``` refers to the cardinality of the joints.
+		- By default, the end-effector tip uses the format ```<robot_name>_tip```.
+		- For best use, you should make it that *both the tip and joints of the arm share the same prefix*!
+	- ```num_attempts``` (default: 5) - the maximum number of iterations given for the solver to find a path plan. Each iteration by default tries to find a solution within 5 seconds. You should tune the arguments for the [```sim.compute```](https://manual.coppeliarobotics.com/en/simOMPL.htm#compute) function (line 162) as you need (e.g., increasing computation time).
+
 
 
 4. The function will return a list of configurations (referred to as ```path``` in this documentation).
