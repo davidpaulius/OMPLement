@@ -57,9 +57,7 @@ def path_planning(args):
         1. "robot" :- the name of the robot's base in the scenario
         2. "goal" :- the object handle for a target (this should be some kind of dummy object -- refer to Python code for example)
         3. "algorithm" :- the name of the motion planning algorithm to use (by default, "RRTstar" will be used)
-        4. "num_attempts" :- the number of times to run OMPL (default: 20)
-        5. "max_compute" :- the maximum time (in seconds) allotted to computing a solution
-        6. "max_simplify" :- the maximum time (in seconds) allotted to simplifying a solution
+        4. "num_attempts" :- the number of times to run OMPL
     """
 
     # -- first check if the robot name and goal handle have been provided to the function:
@@ -77,12 +75,6 @@ def path_planning(args):
 
     algorithm = simOMPL.Algorithm.RRTstar
     if "algorithm" in args: algorithm = args["algorithm"]
-
-    max_compute = 5
-    if "max_compute" in args: max_compute = args["max_compute"]
-
-    max_simplify = -1
-    if "max_simplify" in args: algorithm = args["max_simplify"]
 
     # -- arm_prefix :- you can define the name format for joints (in the case where maybe there is a particular
     #   set of joints for which you want to do motion planning -- e.g., Spot robot has arm joints separate to legs)
@@ -176,7 +168,7 @@ def path_planning(args):
 
         for _ in range(num_ompl_attempts):
             # -- read more about compute operation here: https://manual.coppeliarobotics.com/en/simOMPL.htm#compute
-            result, path = simOMPL.compute(ompl_task,max_compute,max_simplify,0)
+            result, path = simOMPL.compute(ompl_task,5,-1,0)
 
             # -- we will see if there was an exact solution found;
             #    that way we know if we might need to loop back around again to find the solution
