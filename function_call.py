@@ -146,7 +146,6 @@ def find_pose_for_ompl(
 
 sim.startSimulation()
 
-
 for target_object in ["D_block_3", "C_block_3", "B_block_1"]:
     goal_poses = find_pose_for_ompl(
         robot_name="Panda",
@@ -155,3 +154,5 @@ for target_object in ["D_block_3", "C_block_3", "B_block_1"]:
     success = ompl_path_planning(
         goal_pose=goal_poses[0],
     )
+
+sim.stopSimulation()
