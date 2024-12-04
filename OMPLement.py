@@ -43,9 +43,9 @@ def sysCall_init():
     simOMPL = require('simOMPL')
     math = require('math')
 
-    self.use_lua = True
+    self.use_lua = False
     self.verbose = True
-    self.use_state_validation = True
+    self.use_state_validation = False
 
     sim.addLog(sim.getInt32Param(sim.intparam_verbosity), "[OMPLement] : Loading OMPL motion planning script...")
 
@@ -53,7 +53,7 @@ def sysCall_init():
 def visualizePath(path, rgb):
     _lineContainer=sim.addDrawingObject(sim.drawing_lines,3,0,-1,99999,rgb)
     sim.addDrawingObjectItem(_lineContainer,None)
-    if path:
+    if path: 
         #lb=sim.setStepping(True)
         initConfig=getConfig()
         for i in range(1, len(path)):
@@ -141,12 +141,6 @@ def find_ik_config(args):
         joint_prefix = f"/{robot_name}/joint"
     self.tip = sim.getObject(f'/{robot_name}/tip')
 
-    # -- num_ompl_attempts :- we have this functionality because simOMPL.compute() can reuse previously computed data
-    #   Source: https://manual.coppeliarobotics.com/en/pathAndMotionPlanningModules.htm
-    num_ompl_attempts = 5
-    # -- check if the number of attempts for OMPL to solve a problem has been defined:
-    if "num_attempts" in args: num_ompl_attempts = args["num_attempts"]
-
     assert self.robot != -1, "[OMPLement] : Robot base not defined!"
     assert self.tip != -1, "[OMPLement] : End-effector tip not defined!"
 
@@ -194,24 +188,23 @@ def find_ik_config(args):
     #path=simIK.generatePath(ikEnv,ikGroup,ikJointHandles,ikTip,500)
     simIK.setObjectPose(ikEnv,ikGoal,ikBase,pose)
 
-    for _ in range(num_ompl_attempts):
-        # -- check here for more info on how a valid configuration is found via IK: https://manual.coppeliarobotics.com/en/simIK.htm#simIK.findConfigs
-        configs = simIK.findConfigs(
-            ikEnv,ikGroup,ikJointHandles,
-            {
-                'maxDist': 0.05,
-                'maxTime': 10,
-                'findMultiple': False, # -- change to True to find multiple solutions
-                'pMetric': [0.05,0.05,0.05,0.01],
-                'cb': configurationValidationCallback
-            })
+    params = {
+        'maxDist': 0.1,
+        'maxTime': 10,
+        'findMultiple': False, # -- change to True to find multiple solutions
+        'pMetric': [0.05,0.05,0.05,0.1],
+        'cb': configurationValidationCallback
+    }
 
-        if len(configs) > 0:
-            # -- found a robot config that matches the desired pose!
-            return configs[0]
+    # -- check here for more info on how a valid configuration is found via IK: https://manual.coppeliarobotics.com/en/simIK.htm#simIK.findConfigs
+    configs = simIK.findConfigs(ikEnv,ikGroup,ikJointHandles, params)
+
+    if len(configs) > 0: 
+        # -- found a robot config that matches the desired pose!
+        return configs[0]
 
     return None
-
+    
 
 def ompl_path_planning(args):
     """
@@ -277,14 +270,14 @@ def ompl_path_planning(args):
         simOMPL.setCollisionPairs(self.ompl_task,[self.robotCollection, sim.handle_all])
         simOMPL.setStartState(self.ompl_task,getConfig())
         simOMPL.setGoalState(self.ompl_task,valid_config)
-        simOMPL.setStateValidityCheckingResolution(self.ompl_task, float('1.5e-3'))
+        simOMPL.setStateValidityCheckingResolution(self.ompl_task, float('3.0e-3'))
 
         if self.use_state_validation:
             # WARNING: state validation is very slow, probably best not to use it:
             if self.use_lua:
                 data = [self.ompl_task, self.robotCollection, self.minDistance, self.maxDistance]
                 sim.callScriptFunction('transmitToLua', sim.handle_self, data)
-                #simOMPL.setStateValidationCallback(self.ompl_task, 'luaStateValidation_collision')
+                simOMPL.setStateValidationCallback(self.ompl_task, 'luaStateValidation_collision')
                 #simOMPL.setStateValidationCallback(self.ompl_task, 'luaStateValidation_distance')
             else:
                 simOMPL.setStateValidationCallback(self.ompl_task, stateValidationCallback)
