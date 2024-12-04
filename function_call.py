@@ -1,103 +1,157 @@
-    def ompl_path_planning(
-            self,
-            target_object: str,
-            goal_pose: list[float],
-            algorithm: int,
-            num_ompl_attempts: int,
-            max_compute: int,
-            max_simplify: int,
-            len_path: int,
-            rgb: list[float] = [0.0, 1.0, 0.0],
-            draw_path: bool = False,
-            ignore_dynamics: bool = False,
-        ) -> bool:
+import os
+import sys
+import time
+import math
 
-        # -- formatting the string name for printing a cool message:
-        if target_object:
-            self.sim.addLog(self.sim.getInt32Param(self.sim.intparam_verbosity), f'[OMPLement]: finding a plan to object "{target_object}"...')
+try:
+    from coppeliasim_zmqremoteapi_client import RemoteAPIClient
+except ImportError:
+    print(' -- ERROR: Set up CoppeliaSim ZeroMQ client as described here: '\
+          'https://manual.coppeliarobotics.com/en/zmqRemoteApiOverview.htm')
+    sys.exit()
 
-        # -- create a dummy object that will represent the target goal:
-        target_goal = self.sim.createDummy(0.025)
-        self.sim.setObjectPose(target_goal, goal_pose, self.sim.getObject(f'/{self.robot_name}'))
-        self.sim.setObjectColor(target_goal, 0, self.sim.colorcomponent_ambient_diffuse, rgb)
-        self.sim.setObjectColor(target_goal, 0, self.sim.colorcomponent_emission, [0.6, 0.6, 0.6])
-        self.sim.setObjectAlias(target_goal, 'OMPL_target')
+client = RemoteAPIClient(host='localhost')
 
-        # -- we sleep for a bit so we can see this object appear in the sim:
-        time.sleep(0.0001)
+sim = client.require('sim')
+status = sim.loadScene(os.path.abspath('./panda_blocks_simple.ttt'))
 
-        ompl_script = self.sim.getScript(self.sim.scripttype_simulation, self.sim.getObject('/OMPLement'))
+# -- loading required modules for simulation:
+simIK = client.require('simIK')
+simOMPL = client.require('simOMPL')
 
-        path = self.sim.callScriptFunction(
-            "ompl_path_planning",
-            ompl_script,
-            {
-                "robot": self.robot_name,
-                "goal": target_goal,
-                "algorithm": algorithm,
-                "num_attempts": num_ompl_attempts,
-                "max_compute": max_compute,
-                "max_simplify": max_simplify,
-                "len_path": len_path,
-            },
-        )
+def ompl_path_planning(
+        goal_pose: list[float],
+        robot_name: str = "Panda",
+        num_ompl_attempts: int = 6,
+        max_compute: int = 10,
+        max_simplify: int = -1,
+        len_path: int = 0,
+    ) -> bool:
 
-        if path:
-            self.sim.addLog(self.sim.getInt32Param(self.sim.intparam_verbosity), f'[OMPLement]: plan found!')
+    # -- create a dummy object that will represent the target goal:
+    target_goal = sim.createDummy(0.025)
+    sim.setObjectPose(target_goal, goal_pose, sim.getObject(f'/{robot_name}'))
+    sim.setObjectColor(target_goal, 0, sim.colorcomponent_ambient_diffuse, [0.0, 1.0, 1.0])
+    sim.setObjectColor(target_goal, 0, sim.colorcomponent_emission, [0.6, 0.6, 0.6])
+    sim.setObjectAlias(target_goal, 'OMPL_target')
 
-            # -- we need to disable the IK following done by the "target" dummy of the robot:
-            # self.sim.setModelProperty(target, self.sim.modelproperty_scripts_inactive)
-            ik_script = self.sim.getScript(self.sim.scripttype_simulation, self.sim.getObject(f"/{self.robot_name}"))
-            if ik_script == -1:
-                ik_script = self.sim.getScript(self.sim.scripttype_customization, self.sim.getObject(f"/{self.robot_name}"))
+    # -- we sleep for a bit so we can see this object appear in the sim:
+    time.sleep(0.0001)
 
-            self.sim.setObjectInt32Param(ik_script, self.sim.scriptintparam_enabled, 0)
+    ompl_script = sim.getScript(sim.scripttype_simulation, sim.getObject('/OMPLement'))
 
-            self.start()
+    path = sim.callScriptFunction(
+        "ompl_path_planning",
+        ompl_script,
+        {
+            "robot": robot_name,
+            "goal": target_goal,
+            "algorithm": simOMPL.Algorithm.RRTConnect,
+            "num_attempts": num_ompl_attempts,
+            "max_compute": max_compute,
+            "max_simplify": max_simplify,
+            "len_path": len_path,
+        },
+    )
 
-            # -- use a cubic spline to interpolate time points:
-            cs = CubicSpline(
-                [0, 0.3, 0.5, 0.8, 1],
-                [float('2.5e-3'), float('2.0e-3'), float('1.0e-3'), float('2.0e-3'), float('2.5e-3')]
-            )
-            xs = np.arange(0, 1, 1/len(path))
-            time_points = cs(xs)
+    if path:
+        sim.addLog(sim.getInt32Param(sim.intparam_verbosity), f'[OMPLement]: plan found!')
 
-            if draw_path: drawn_object = self.sim.callScriptFunction('visualizePath', ompl_script, path, rgb)
+        # -- we need to disable the IK following done by the "target" dummy of the robot:
+        # sim.setModelProperty(target, sim.modelproperty_scripts_inactive)
+        ik_script = sim.getScript(sim.scripttype_simulation, sim.getObject(f"/{robot_name}"))
+        if ik_script == -1:
+            ik_script = sim.getScript(sim.scripttype_customization, sim.getObject(f"/{robot_name}"))
 
-            if ignore_dynamics:
-                for obj in self.objects_in_sim:
-                    obj_handle = self.sim.getObject(f"/{obj}", {"noError": True})
-                    if obj_handle != -1:
-                        self.sim.setObjectInt32Parameter(obj_handle, self.sim.shapeintparam_static, 1)
-                        # self.sim.setObjectInt32Parameter(obj_handle, self.sim.shapeintparam_respondable, 0)
+        sim.setObjectInt32Param(ik_script, sim.scriptintparam_enabled, 0)
 
-            time.sleep(0.01)
+        # -- with the computed path, we will gradually change the configuration of the robot:
+        for P in range(len(path)):
+            sim.callScriptFunction('setConfig', ompl_script, path[P])
+            time.sleep(float('2.5e-3'))
 
-            # -- with the computed path, we will gradually change the configuration of the robot:
-            for P in range(len(path)):
-                self.sim.callScriptFunction('setConfig', ompl_script, path[P])
-                time.sleep(time_points[P])
+        time.sleep(0.01)
 
-            time.sleep(0.01)
+        # -- we need to re-enable the IK following done by the "target" dummy of the robot:
+        sim.setObjectPosition(sim.getObject(f'/{robot_name}/target'), sim.getObjectPosition(sim.getObject(f'/{robot_name}/tip')), -1)
+        sim.setObjectOrientation(sim.getObject(f'/{robot_name}/target'), sim.getObjectOrientation(sim.getObject(f'/{robot_name}/tip')), -1)
+        sim.setObjectInt32Param(ik_script, sim.scriptintparam_enabled, 1)
 
-            if ignore_dynamics:
-                for obj in self.objects_in_sim:
-                    obj_handle = self.sim.getObject(f"/{obj}", {"noError": True})
-                    if obj_handle != -1:
-                        self.sim.setObjectInt32Parameter(obj_handle, self.sim.shapeintparam_static, 0)
-                        # self.sim.setObjectInt32Parameter(obj_handle, self.sim.shapeintparam_respondable, 1)
+    else:
+        sim.addLog(sim.getInt32Param(sim.intparam_verbosity), f'[OMPLement]: plan not found!')
 
-            # -- we need to re-enable the IK following done by the "target" dummy of the robot:
-            self.sim.setObjectPosition(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObjectPosition(self.sim.getObject(f'/{self.robot_name}/tip')), -1)
-            self.sim.setObjectOrientation(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObjectOrientation(self.sim.getObject(f'/{self.robot_name}/tip')), -1)
-            self.sim.setObjectInt32Param(ik_script, self.sim.scriptintparam_enabled, 1)
-            if draw_path: self.sim.removeDrawingObject(drawn_object)
+    # -- remove the OMPL target object:
+    sim.removeObjects([sim.getObject('/OMPL_target')])
+
+    return bool(path)
+
+def find_pose_for_ompl(
+        robot_name: str,
+        target_object: str,
+    ) -> list[float]:
+
+    robot = sim.getObject(f"/{robot_name}")
+    target = sim.getObject(f"/{robot_name}/target")
+
+    index = 0
+    # # -- check if the target object refers to the table, as we will have to find an empty spot:
+    # if target_object in ["table", "worksurface"]:
+    #     empty_spot = choice(find_empty_spots())
+    #     index, target_object = empty_spot['index'], sim.getObjectAlias(empty_spot['handle'])
+    #     sim.addLog(sim.getInt32Param(sim.intparam_verbosity), f"table grounding: found empty spot: /{target_object}[{empty_spot['index']}]")
+    #     if verbose:
+    #         print(f"table grounding: found empty spot: /{target_object}[{empty_spot['index']}]")
+
+    goal = sim.getObject(f"/{target_object}", {"index": index})
+
+    candidate_goal_poses = []
+
+    for rotate in [0.0, (math.pi/2), (math.pi), (math.pi*2)]:
+        # -- Find a collision-free config that matches a specific pose:
+        goal_pose = sim.getObjectPose(goal, robot)
+
+        # -- get the object handles for the gripper's attach point:
+        gripper_attachPoint = -1
+        children = sim.getObjectsInTree(sim.getObject(f"/{robot_name}"))
+        for C in children:
+            if "attachPoint" in sim.getObjectAlias(C):
+                gripper_attachPoint = C
+
+        if gripper_attachPoint == -1:
+            sys.exit("ERROR: robot gripper attach point was not found!")
+
+        # -- determine the height based on whether there is an object in hand or not:
+        obj_in_hand = sim.getObjectChild(gripper_attachPoint, 0)
+        if obj_in_hand != -1:
+            # -- first, we find a spot that sits RIGHT ON TOP of the surface...
+            goal_pose[2] += sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_z)
+            # ... then we will find a spot that considers the height of the object:
+            goal_pose[2] += sim.getObjectFloatParam(obj_in_hand, sim.objfloatparam_objbbox_max_z) * (1.5 if target_object not in ["table", "worksurface"] else 1.25)
+
+            # -- we also want to consider the orientation of the object
+            orientation = sim.getObjectOrientation(goal, target)
+            goal_pose[3:] = sim.buildPose(goal_pose[:3], [orientation[0], orientation[1], math.pi + rotate])[3:]
 
         else:
-            self.sim.addLog(self.sim.getInt32Param(self.sim.intparam_verbosity), f'[OMPLement]: plan not found!')
+            # -- account for fingertip placement on object:
+            goal_pose[2] += sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_z) * 1.5
+            # -- try to match the orientation of the surface object:
+            orientation = sim.getObjectOrientation(goal, robot)
+            goal_pose[3:] = sim.buildPose(goal_pose[:3], [-(math.pi), orientation[1], orientation[2] + rotate])[3:]
 
-        # -- remove the OMPL target object:
-        self.sim.removeObjects([self.sim.getObject('/OMPL_target')])
 
-        return bool(path)
+        candidate_goal_poses.append(goal_pose)
+
+    return candidate_goal_poses
+
+sim.startSimulation()
+
+
+for target_object in ["D_block_3", "C_block_3", "B_block_1"]:
+    goal_poses = find_pose_for_ompl(
+        robot_name="Panda",
+        target_object=target_object)
+
+    success = ompl_path_planning(
+        goal_pose=goal_poses[0],
+    )
