@@ -13,6 +13,7 @@ except ImportError:
 client = RemoteAPIClient(host='localhost')
 
 sim = client.require('sim')
+# status = sim.loadScene(os.path.abspath('./panda_uibk_ffrob_problem32_close_blocks_ompl_david_bounds.ttt'))
 status = sim.loadScene(os.path.abspath('./panda_blocks_simple.ttt'))
 
 # -- loading required modules for simulation:
@@ -51,11 +52,14 @@ def ompl_path_planning(
             "max_compute": max_compute,
             "max_simplify": max_simplify,
             "len_path": len_path,
+            "state_resolution": float("5.0e-2"),
+            "use_lua": False,
+            "use_state_validation": True,
         },
     )
 
     if path:
-        sim.addLog(sim.getInt32Param(sim.intparam_verbosity), f'[OMPLement]: plan found!')
+        sim.addLog(sim.verbosity_default, f'[OMPLement]: plan found!')
 
         # -- we need to disable the IK following done by the "target" dummy of the robot:
         # sim.setModelProperty(target, sim.modelproperty_scripts_inactive)
@@ -67,7 +71,7 @@ def ompl_path_planning(
 
         # -- with the computed path, we will gradually change the configuration of the robot:
         for P in range(len(path)):
-            sim.callScriptFunction('setConfig', ompl_script, path[P])
+            sim.callScriptFunction('setConfig_python', ompl_script, path[P])
             time.sleep(float('2.5e-3'))
 
         time.sleep(0.01)
@@ -78,7 +82,7 @@ def ompl_path_planning(
         sim.setObjectInt32Param(ik_script, sim.scriptintparam_enabled, 1)
 
     else:
-        sim.addLog(sim.getInt32Param(sim.intparam_verbosity), f'[OMPLement]: plan not found!')
+        sim.addLog(sim.verbosity_default, f'[OMPLement]: plan not found!')
 
     # -- remove the OMPL target object:
     sim.removeObjects([sim.getObject('/OMPL_target')])
@@ -98,7 +102,7 @@ def find_pose_for_ompl(
     # if target_object in ["table", "worksurface"]:
     #     empty_spot = choice(find_empty_spots())
     #     index, target_object = empty_spot['index'], sim.getObjectAlias(empty_spot['handle'])
-    #     sim.addLog(sim.getInt32Param(sim.intparam_verbosity), f"table grounding: found empty spot: /{target_object}[{empty_spot['index']}]")
+    #     sim.addLog(sim.verbosity_default, f"table grounding: found empty spot: /{target_object}[{empty_spot['index']}]")
     #     if verbose:
     #         print(f"table grounding: found empty spot: /{target_object}[{empty_spot['index']}]")
 
@@ -106,7 +110,7 @@ def find_pose_for_ompl(
 
     candidate_goal_poses = []
 
-    for rotate in [0.0, (math.pi/2), (math.pi), (math.pi*2)]:
+    for rotate in [0.0, (math.pi)]:
         # -- Find a collision-free config that matches a specific pose:
         goal_pose = sim.getObjectPose(goal, robot)
 
@@ -134,11 +138,28 @@ def find_pose_for_ompl(
 
         else:
             # -- account for fingertip placement on object:
-            goal_pose[2] += sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_z) * 1.5
+            goal_pose[2] += sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_z) * 3.0
             # -- try to match the orientation of the surface object:
             orientation = sim.getObjectOrientation(goal, robot)
             goal_pose[3:] = sim.buildPose(goal_pose[:3], [-(math.pi), orientation[1], orientation[2] + rotate])[3:]
 
+        # NOTE: these are the ideal poses that Alejandro would use for picking from the side:
+        # if obj_in_hand != -1:
+        #     # -- first, we find a spot that sits RIGHT ON TOP of the surface...
+        #     goal_pose[0] += sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_x)
+        #     # ... then we will find a spot that considers the height of the object:
+        #     goal_pose[0] += sim.getObjectFloatParam(obj_in_hand, sim.objfloatparam_objbbox_max_x) * (1.5 if target_object not in ["table", "worksurface"] else 1.25)
+
+        #     # -- we also want to consider the orientation of the object
+        #     orientation = sim.getObjectOrientation(goal, target)
+        #     goal_pose[3:] = sim.buildPose(goal_pose[:3], [orientation[0], orientation[1], math.pi + rotate])[3:]
+
+        # else:
+        #     # -- account for fingertip placement on object:
+        #     goal_pose[0] -= sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_x) * 3
+        #     # -- try to match the orientation of the surface object:
+        #     orientation = sim.getObjectOrientation(goal, robot)
+        #     goal_pose[3:] = sim.buildPose(goal_pose[:3], [orientation[0], math.pi/2, orientation[2] + rotate])[3:]
 
         candidate_goal_poses.append(goal_pose)
 
@@ -146,13 +167,19 @@ def find_pose_for_ompl(
 
 sim.startSimulation()
 
-for target_object in ["D_block_3", "C_block_3", "B_block_1"]:
-    goal_poses = find_pose_for_ompl(
-        robot_name="Panda",
-        target_object=target_object)
+try:
+    for target_object in ["B_block_1", "D_block_3", "C_block_3"]:
+        goal_poses = find_pose_for_ompl(
+            robot_name="Panda",
+            target_object=target_object)
 
-    success = ompl_path_planning(
-        goal_pose=goal_poses[0],
-    )
+        for _ in range(1):
+            for G in goal_poses:
+                success = ompl_path_planning(
+                    goal_pose=G,
+                )
+except Exception:
+    pass
 
 sim.stopSimulation()
+pass
