@@ -3,6 +3,9 @@ import sys
 import time
 import math
 
+from scipy.interpolate import CubicSpline
+import numpy as np
+
 try:
     from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 except ImportError:
@@ -20,46 +23,128 @@ status = sim.loadScene(os.path.abspath('./panda_blocks_simple.ttt'))
 simIK = client.require('simIK')
 simOMPL = client.require('simOMPL')
 
+robot_name = "Panda"
+
+def move_to_configs(path: list[float]):
+    # NOTE: check the sim.moveToConfig() docs here: https://manual.coppeliarobotics.com/en/regularApi/simMoveToConfig.htm
+    vel = 120
+    accel = 60
+    jerk = 60
+
+    maxVel = [vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180]
+    maxAccel = [accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180]
+    maxJerk = [jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180]
+
+    # -- get all the joint angles of the robot:
+    joint_handles = []
+    num_joints = 1
+
+    while True:
+        # -- using "noError" so default handle is -1 (if not found);
+        #    read more here: https://manual.coppeliarobotics.com/en/regularApi/simGetObject.htm
+        obj_handle = sim.getObject(f"/{robot_name}/joint", {"noError": True, "index":(num_joints-1)})
+
+        if obj_handle == -1: break
+
+        joint_handles.append(obj_handle)
+        num_joints += 1
+
+    # -- change the simulation setting to stepping mode for threaded/non-blocking execution:
+    sim.setStepping(True)
+    sim.step()
+
+    # -- iterate through the entire plan of robot configurations:
+    for P in range(len(path)):
+        params = {
+            'joints': joint_handles,
+            'targetPos': path[P],
+            # 'maxVel': maxVel,
+            'targetVel': [0.8 * x for x in maxVel],
+            # 'maxAccel': maxAccel,
+            # 'maxJerk': maxJerk,
+        }
+        sim.moveToConfig(params)
+        sim.step()
+
+    # -- turn off stepping mode since we don't need it beyond this point:
+    sim.setStepping(False)
+
+
 def ompl_path_planning(
+        target_object: str,
         goal_pose: list[float],
-        robot_name: str = "Panda",
-        num_ompl_attempts: int = 6,
-        max_compute: int = 10,
-        max_simplify: int = -1,
-        len_path: int = 0,
+        ompl_args: dict = {},
+        draw_path: bool = True,
+        motion_method: str = "moveToConfig",
     ) -> bool:
+
+    # -- formatting the string name for printing a cool message:
+    if target_object:
+        sim.addLog(sim.verbosity_default, f'[FOON-TAMP]: finding a plan to object "{target_object}"...')
+        print(f'[FOON-TAMP]: finding a plan to object "{target_object}"...')
 
     # -- create a dummy object that will represent the target goal:
     target_goal = sim.createDummy(0.025)
     sim.setObjectPose(target_goal, goal_pose, sim.getObject(f'/{robot_name}'))
-    sim.setObjectColor(target_goal, 0, sim.colorcomponent_ambient_diffuse, [0.0, 1.0, 1.0])
+    sim.setObjectColor(target_goal, 0, sim.colorcomponent_ambient_diffuse, [0.0, 1.0, 0.0])
     sim.setObjectColor(target_goal, 0, sim.colorcomponent_emission, [0.6, 0.6, 0.6])
     sim.setObjectAlias(target_goal, 'OMPL_target')
 
     # -- we sleep for a bit so we can see this object appear in the sim:
     time.sleep(0.0001)
 
+    # NOTE: checking if key parameters have been specified for OMPL:
+    if not bool(ompl_args): ompl_args = {}
+    if "ompl_algorithm" not in ompl_args:
+        ompl_args["ompl_algorithm"] = "RRTConnect"
+    try:
+        ompl_args['ompl_algorithm'] = eval(f"simOMPL.Algorithm.{ompl_args['ompl_algorithm']}")
+    except AssertionError:
+        print(f"WARNING: {ompl_args['ompl_algorithm']} is not a valid algorithm!")
+        ompl_args['ompl_algorithm'] = eval(f"simOMPL.Algorithm.RRTConnect")
+    if "ompl_num_attempts" not in ompl_args:
+        ompl_args["ompl_num_attempts"] = 5
+    if "ompl_max_compute" not in ompl_args:
+        ompl_args["ompl_max_compute"] = 15
+    if "ompl_max_simplify" not in ompl_args:
+        # NOTE: let OMPL do default simplification, signified by -1:
+        ompl_args["ompl_max_simplify"] = -1
+    if "ompl_len_path" not in ompl_args:
+        # NOTE: let OMPL do give default number of configs in solution path, signified by 0:
+        ompl_args["ompl_len_path"] = 0
+    if "ompl_state_resolution" not in ompl_args:
+        ompl_args["ompl_state_resolution"] = float("5.0e-3")
+    if "ompl_use_state_validation" not in ompl_args:
+        ompl_args["ompl_use_state_validation"] = True
+    if "ompl_use_lua" not in ompl_args:
+        ompl_args["ompl_use_lua"] = True
+    if "ompl_motion_constraints" not in ompl_args:
+        ompl_args["ompl_motion_constraints"] = "free"
+
+    print(ompl_args)
+
     ompl_script = sim.getScript(sim.scripttype_simulation, sim.getObject('/OMPLement'))
 
-    path = sim.callScriptFunction(
+    path, _ = sim.callScriptFunction(
         "ompl_path_planning",
         ompl_script,
         {
             "robot": robot_name,
             "goal": target_goal,
-            "algorithm": simOMPL.Algorithm.RRTConnect,
-            "num_attempts": num_ompl_attempts,
-            "max_compute": max_compute,
-            "max_simplify": max_simplify,
-            "len_path": len_path,
-            "state_resolution": float("5.0e-2"),
-            "use_lua": False,
-            "use_state_validation": True,
+            "ompl_algorithm": ompl_args["ompl_algorithm"],
+            "ompl_max_compute": ompl_args["ompl_max_compute"],
+            "ompl_max_simplify": ompl_args["ompl_max_simplify"],
+            "ompl_len_path": ompl_args["ompl_len_path"],
+            "ompl_state_resolution": ompl_args["ompl_state_resolution"],
+            "ompl_motion_constraints": ompl_args["ompl_motion_constraints"],
+            "ompl_use_state_validation": ompl_args["ompl_use_state_validation"],
+            "ompl_use_lua": ompl_args["ompl_use_lua"],
         },
     )
 
     if path:
-        sim.addLog(sim.verbosity_default, f'[OMPLement]: plan found!')
+        print(f'[FOON-TAMP]: plan found!')
+        sim.addLog(sim.verbosity_default, f'[FOON-TAMP]: plan found!')
 
         # -- we need to disable the IK following done by the "target" dummy of the robot:
         # sim.setModelProperty(target, sim.modelproperty_scripts_inactive)
@@ -69,10 +154,26 @@ def ompl_path_planning(
 
         sim.setObjectInt32Param(ik_script, sim.scriptintparam_enabled, 0)
 
-        # -- with the computed path, we will gradually change the configuration of the robot:
-        for P in range(len(path)):
-            sim.callScriptFunction('setConfig_python', ompl_script, path[P])
-            time.sleep(float('2.5e-3'))
+        # -- if set to true, we will draw the path in the simulation:
+        if draw_path: drawn_object = sim.callScriptFunction('visualizePath', ompl_script, path, [0.0, 1.0, 0.0])
+
+        time.sleep(0.01)
+
+        if motion_method != "moveToConfig":
+            # -- use a cubic spline to interpolate time points:
+            cs = CubicSpline(
+                [0, 0.3, 0.5, 0.8, 1],
+                [float('2.5e-3'), float('2.0e-3'), float('1.0e-3'), float('2.0e-3'), float('2.5e-3')]
+            )
+            xs = np.arange(0, 1, 1/len(path))
+            time_points = cs(xs)
+
+            # -- with the computed path, we will gradually change the configuration of the robot:
+            for P in range(len(path)):
+                sim.callScriptFunction('setConfig_python', ompl_script, path[P])
+                time.sleep(time_points[P])
+        else:
+            move_to_configs(path)
 
         time.sleep(0.01)
 
@@ -80,14 +181,17 @@ def ompl_path_planning(
         sim.setObjectPosition(sim.getObject(f'/{robot_name}/target'), sim.getObjectPosition(sim.getObject(f'/{robot_name}/tip')), -1)
         sim.setObjectOrientation(sim.getObject(f'/{robot_name}/target'), sim.getObjectOrientation(sim.getObject(f'/{robot_name}/tip')), -1)
         sim.setObjectInt32Param(ik_script, sim.scriptintparam_enabled, 1)
+        if draw_path: sim.removeDrawingObject(drawn_object)
 
     else:
-        sim.addLog(sim.verbosity_default, f'[OMPLement]: plan not found!')
+        sim.addLog(sim.verbosity_default, f'[FOON-TAMP]: plan not found!')
+        print(f'[FOON-TAMP]: plan not found!')
 
     # -- remove the OMPL target object:
     sim.removeObjects([sim.getObject('/OMPL_target')])
 
     return bool(path)
+
 
 def find_pose_for_ompl(
         robot_name: str,
@@ -170,15 +274,23 @@ sim.startSimulation()
 try:
     for target_object in ["B_block_1", "D_block_3", "C_block_3"]:
         goal_poses = find_pose_for_ompl(
-            robot_name="Panda",
-            target_object=target_object)
+            robot_name=robot_name,
+            target_object=target_object,
+        )
 
         for _ in range(1):
             for G in goal_poses:
                 success = ompl_path_planning(
+                    target_object=target_object,
                     goal_pose=G,
+                    ompl_args={
+                        "ompl_state_resolution": float("5.0e-3"),
+                        "ompl_use_lua": True,
+                        "ompl_algorithm": "RRTStar",
+                    },
                 )
-except Exception:
+except Exception as e:
+    print(e)
     pass
 
 sim.stopSimulation()
