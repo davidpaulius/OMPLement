@@ -37,6 +37,50 @@ function stateValidationCollision_lua(config)
 end
 
 
+function luaFixedAxisData(data)
+    -- 'robot' and 'tip' refer to the handles of the robot and the tip of the end-effector:
+    robot, tip = data["robot"], data["tip"]
+
+    -- 'axis' refers to any value in ["free", "x", "y", "z"]:
+    axis = data["axis"]
+
+    -- this value will reflect how "aligned" the poses must be along a given axis:
+    if not data["alignment"] then
+        margin = 0.8
+    else
+        margin = data["alignment"]
+    end
+
+    -- TODO: are there any other values needed?
+end
+
+
+function stateValidationFixedAxis_lua(config)
+    -- check if a configuration is valid, i.e., doesn't collide:
+    -- save current config:
+    local tmp = getConfig_lua()
+
+    initial_pose = sim.getObjectPose(tip, -1)
+
+    -- apply new config:
+    setConfig_lua(config)
+
+    next_pose = sim.getObjectPose(tip, -1)
+
+    -- restore original config:
+    setConfig_lua(tmp)
+
+    -- NOTE: the initial pose of the robot's hand will be passed by auxiliary function:
+    --      variable names: axis, margin, initial_pose
+    if checkAxisSimilarity_lua(initial_pose, next_pose, axis, margin) == false then
+        return false
+    end
+
+    -- if the axis alignment test passes, then we check for collisions:
+    return stateValidationCollision_lua(config)
+end
+
+
 function luaFindIKConfig(data)
     -- get necessary handles for the state validation portion:
     local ikEnv = data["ikEnv"]
@@ -47,8 +91,8 @@ function luaFindIKConfig(data)
     joint_handles = data["joint_handles"]
 
     params = {
-        maxDist = 0.1,
-        maxTime = 10,
+        maxDist = 0.05,
+        maxTime = 3,
         findMultiple = false, -- change to True to find multiple solutions
         pMetric = {0.05,0.05,0.05,0.1},
         cb = stateValidationCollision_lua
@@ -73,10 +117,6 @@ function luaOMPLCompute(data)
     local ompl_max_simplify = data["ompl_max_simplify"]
     local ompl_len_path = data["ompl_len_path"]
 
-    if data["ompl_use_state_validation"] and data["ompl_use_state_validation"] == true then
-        simOMPL.setStateValidationCallback(ompl_task, 'stateValidationCollision_lua')
-    end
-
     -- run the OMPL function from lua:
     result, path = simOMPL.compute(ompl_task, ompl_max_compute, ompl_max_simplify, ompl_len_path)
 
@@ -99,45 +139,57 @@ function checkXAxisSimilarity(orientationA, orientationB, margin)
     -- Check similarity between the X-axes: dot product of a vector with itself is the square of its magnitude
     local dotProduct = transformedXAxisA[1] * transformedXAxisB[1] + transformedXAxisA[2] * transformedXAxisB[2] + transformedXAxisA[3] * transformedXAxisB[3]
 
-    if dotProduct > margin then -- if dotProduct is near to 1 then X axes are similarly alligned.
+    if dotProduct > margin then -- if dotProduct is near to 1 then X axes are similarly aligned.
         return true
     end
     return false
 end
 
 
-function checkAxisSimilarity(orientationA, orientationB, axis, margin)
+function checkAxisSimilarity_lua(poseA, poseB, axis, margin)
+    -- NOTE: axis can be some kind of string in ["x", "y", "z", "free"],
+    --  'margin' refers to how "similar" the axis must be aligned to some given reference:
     local xAxisA = {1, 0, 0}  -- X-axis vector (global frame) for object A
     local yAxisA = {0, 1, 0}  -- Y-axis vector (global frame) for object A
     local zAxisA = {0, 0, 1}  -- Z-axis vector (global frame) for object A
 
-    -- Convert orientations to rotation matrices
-    local rotMatrixA = sim.buildMatrix({0, 0, 0}, orientationA)
-    local rotMatrixB = sim.buildMatrix({0, 0, 0}, orientationB)
+    -- extract the orientation components from the 7D pose
+    --  and make rotation matrices that simply have direction:
+    local vectorA = {0, 0, 0, poseA[4], poseA[5], poseA[6], poseA[7]}
+    local vectorB = {0, 0, 0, poseB[4], poseB[5], poseB[6], poseB[7]}
+
+    -- Convert poses to to rotation matrices:
+    local rotMatrixA = sim.poseToMatrix(vectorA)
+    local rotMatrixB = sim.poseToMatrix(vectorB)
+
+    local transformedAxisA, transformedAxisA = -1, -1
 
     if axis == "x" then
         -- Extract X-axis from the rotation matrices
-        local transformedAxisA = sim.multiplyVector(rotMatrixA, xAxisA) -- gets first column of rotation matrix - represents vector of X axis {Xx, Xy, Xz}
-        local transformedAxisB = sim.multiplyVector(rotMatrixB, xAxisA)
+        transformedAxisA = sim.multiplyVector(rotMatrixA, xAxisA) -- gets first column of rotation matrix - represents vector of X axis {Xx, Xy, Xz}
+        transformedAxisB = sim.multiplyVector(rotMatrixB, xAxisA)
     elseif axis == "y" then
         -- Extract Y-axis from the rotation matrices
-        local transformedAxisA = sim.multiplyVector(rotMatrixA, yAxisA)
-        local transformedAxisB = sim.multiplyVector(rotMatrixB, yAxisA)
+        transformedAxisA = sim.multiplyVector(rotMatrixA, yAxisA)
+        transformedAxisB = sim.multiplyVector(rotMatrixB, yAxisA)
     elseif axis == "z" then
         -- Extract Y-axis from the rotation matrices
-        local transformedAxisA = sim.multiplyVector(rotMatrixA, zAxisA)
-        local transformedAxisB = sim.multiplyVector(rotMatrixB, zAxisA)
+        transformedAxisA = sim.multiplyVector(rotMatrixA, zAxisA)
+        transformedAxisB = sim.multiplyVector(rotMatrixB, zAxisA)
     elseif axis == "free" then
         -- just return true, as we don't need to care about fixed orientations:
         return true
     end
 
     -- Check similarity between the X-axes: dot product of a vector with itself is the square of its magnitude
-    local dotProduct = transformedAxisA[1] * transformedAxisB[1] + transformedAxisA[2] * transformedAxisB[2] + transformedAxisA[3] * transformedAxisB[3]
+    local dotProduct = (transformedAxisA[1] * transformedAxisB[1])
+        + (transformedAxisA[2] * transformedAxisB[2])
+        + (transformedAxisA[3] * transformedAxisB[3])
 
     if dotProduct > margin then -- if dotProduct is near to 1 then X axes are similarly alligned.
         return true
     end
+
     return false
 end
 
@@ -183,7 +235,6 @@ def visualizePath(path, rgb):
 def sysCall_thread():
     pass
 
-
 def sysCall_addOnScriptSuspend():
     pass
 
@@ -216,13 +267,11 @@ def stateValidationCollision_python(config):
     objs_in_collision = []
     is_collision, handles = sim.checkCollision(self.robot_collection,sim.handle_all)
 
-    """
     if is_collision == 1 and handles[1] not in objs_in_collision:
         objs_in_collision.append(sim.getObjectAlias(handles[1]))
 
-    if self.verbose and bool(objs_in_collision):
-        sim.addLog(sim.verbosity_scriptwarnings, f"collision found with: {objs_in_collision}")
-    """
+    #if self.verbose and bool(objs_in_collision):
+    #    sim.addLog(sim.verbosity_scriptwarnings, f"collision found with: {objs_in_collision}")
 
     # -- restore original config:
     setConfig_python(tmp)
@@ -234,49 +283,17 @@ def stateValidationOrientation_python(config):
     if not stateValidationCollision_python(config):
         return False
 
-    #return checkAxisSimilarity
-
-"""
-def checkAxisSimilarity(orientationA, orientationB, axis, margin):
-    local xAxisA = {1, 0, 0}  -- X-axis vector (global frame) for object A
-    local yAxisA = {0, 1, 0}  -- Y-axis vector (global frame) for object A
-    local zAxisA = {0, 0, 1}  -- Z-axis vector (global frame) for object A
-
-    -- Convert orientations to rotation matrices
-    local rotMatrixA = sim.buildMatrix({0, 0, 0}, orientationA)
-    local rotMatrixB = sim.buildMatrix({0, 0, 0}, orientationB)
-
-    if axis == "x" then
-        -- Extract X-axis from the rotation matrices
-        local transformedAxisA = sim.multiplyVector(rotMatrixA, xAxisA) -- gets first column of rotation matrix - represents vector of X axis {Xx, Xy, Xz}
-        local transformedAxisB = sim.multiplyVector(rotMatrixB, xAxisA)
-    elseif axis == "y" then
-        -- Extract Y-axis from the rotation matrices
-        local transformedAxisA = sim.multiplyVector(rotMatrixA, yAxisA)
-        local transformedAxisB = sim.multiplyVector(rotMatrixB, yAxisA)
-    elseif axis == "z" then
-        -- Extract Y-axis from the rotation matrices
-        local transformedAxisA = sim.multiplyVector(rotMatrixA, zAxisA)
-        local transformedAxisB = sim.multiplyVector(rotMatrixB, zAxisA)
-    elseif axis == "free" then
-        -- just return true, as we don't need to care about fixed orientations:
-        return true
-    end
-
-    -- Check similarity between the X-axes: dot product of a vector with itself is the square of its magnitude
-    local dotProduct = transformedAxisA[1] * transformedAxisB[1] + transformedAxisA[2] * transformedAxisB[2] + transformedAxisA[3] * transformedAxisB[3]
-
-    if dotProduct > margin then -- if dotProduct is near to 1 then X axes are similarly alligned.
-        return true
-    end
-    return false
-end
-"""
 
 def findIKConfig(args):
     # -- Prepare robot collection:
     self.robot_collection = sim.createCollection()
     sim.addItemToCollection(self.robot_collection, sim.handle_tree, self.robot, 0)
+
+    collection_objs = [(x, sim.getObjectAlias(x)) for x in sim.getCollectionObjects(self.robot_collection)]
+    #print(collection_objs)
+    #for x, y in collection_objs:
+    #    print(y)
+    #    print(sim.getObjectInt32Param(x, sim.shapeintparam_respondable))
 
     # -- prepare an ik task (in order to be able to find configs that match specific end-effector poses):
     ikEnv = simIK.createEnvironment()
@@ -314,8 +331,8 @@ def findIKConfig(args):
     else:
         # -- run simIK.findConfigs from the Python side:
         params = {
-            'maxDist': 0.1,
-            'maxTime': 10,
+            'maxDist': 0.05,
+            'maxTime': 3,
             'findMultiple': False, # -- change to True to find multiple solutions
             'pMetric': [0.05,0.05,0.05,0.1],
             'cb': stateValidationCollision_python,
@@ -417,10 +434,10 @@ def parse_args(args):
         # -- by default, use this resolution value:
         self.ompl_state_resolution = float("1.0e-2")
 
-    # -- ompl_motion_constraints :- this will indicate whether some axis needs to be fixed for path planning:
-    self.ompl_motion_constraints = "free"
-    if "ompl_motion_constraints" in args:
-        self.ompl_motion_constraints = args["ompl_motion_constraints"]
+    # -- ompl_motion_constraint :- this will indicate whether some axis needs to be fixed for path planning:
+    self.ompl_motion_constraint = "free"
+    if "ompl_motion_constraint" in args:
+        self.ompl_motion_constraint = args["ompl_motion_constraint"]
 
     # -- make the robot collection a global object:
     self.robot_collection = sim.createCollection()
@@ -435,24 +452,28 @@ def parse_args(args):
 #end
 
 
-def execute_trajectory_configs(path):
+def execute_trajectory_configs(data):
+    print(data)
+
     sim.setStepping(True)
     sim.step()
 
+    """
     vel = 110
     accel = 40
     jerk = 80
     maxVel = [vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180]
     maxAccel = [accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180]
     maxJerk = [jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180]
+    """
 
-    for P in range(len(path)):
+    for P in range(len(data["path"])):
         params = {
             'joints': self.joint_handles,
             'targetPos': path[P],
-            'maxVel': maxVel,
-            'maxAccel': maxAccel,
-            'maxJerk': maxJerk,
+            'maxVel': data["maxVel"],
+            'maxAccel': data["maxAccel"],
+            'maxJerk': data["maxJerk"],
         }
         sim.moveToConfig(params)
         sim.step()
@@ -483,12 +504,12 @@ def ompl_path_planning(args):
 
     # NOTE: the path contains a Mx1 vector, which needs to be transformed to NxJ vector, where N = M/J.
     # -- the final path will be stored as a NxJ matrix, where N = number of points in trajectory and J = number of joints.
-    final_path = None
+    final_path = []
 
     # NOTE: the total distance gives us some kind of metric about how long the path is, which may be useful for interpolation:
     total_distance = 0
 
-    if len(valid_config) > 0:
+    if bool(valid_config):
         # -- found a robot config that matches the desired pose!
         sim.addLog(sim.verbosity_scriptwarnings, "[OMPLement] : valid configuration found!")
 
@@ -502,11 +523,12 @@ def ompl_path_planning(args):
         simOMPL.setStartState(self.ompl_task,getConfig_python())
         simOMPL.setGoalState(self.ompl_task,valid_config)
         simOMPL.setStateValidityCheckingResolution(self.ompl_task, self.ompl_state_resolution)
+        simOMPL.setVerboseLevel(self.ompl_task, 1)
 
         if self.ompl_use_state_validation:
             # WARNING: state validation is slow, probably best not to use it:
 
-            if self.ompl_motion_constraints == "free":
+            if self.ompl_motion_constraint == "free":
                 if self.verbose:
                     sim.addLog(sim.verbosity_default, "[OMPLement] : Considering free-axis orientation...")
                 if not self.ompl_use_lua:
@@ -514,13 +536,26 @@ def ompl_path_planning(args):
                 else:
                     simOMPL.setStateValidationCallback(self.ompl_task, 'stateValidationCollision_lua')
 
-            elif self.ompl_motion_constraints == "fix-x":
+            elif self.ompl_motion_constraint in ["x", "y", "z"]:
                 if self.verbose:
-                    sim.addLog(sim.verbosity_default, "[OMPLement] : Considering fixed-axis orientation...")
+                    sim.addLog(sim.verbosity_default, f"[OMPLement] : Considering fixed-axis orientation (axis={self.ompl_motion_constraint})...")
+
                 # TODO: fix this:
-                #simOMPL.setStateValidationCallback(self.ompl_task, stateValidation)
+                data = {
+                    "robot": self.robot,
+                    "tip": self.tip,
+                    "axis": self.ompl_motion_constraint,
+                    "alignment": 0.990,
+                }
+                # -- send some necessary values to the state validation checker:
+                sim.callScriptFunction("luaFixedAxisData", sim.handle_self, data)
+                if not self.ompl_use_lua:
+                    simOMPL.setStateValidationCallback(self.ompl_task, "stateValidationFixedAxis_lua")
+                else:
+                    simOMPL.setStateValidationCallback(self.ompl_task, "stateValidationFixedAxis_lua")
 
         simOMPL.setup(self.ompl_task)
+        simOMPL.printTaskInfo(self.ompl_task)
 
         for _ in range(self.ompl_num_attempts):
             # -- read more about compute operation here: https://manual.coppeliarobotics.com/en/simOMPL.htm#compute
@@ -545,16 +580,14 @@ def ompl_path_planning(args):
             # -- we will see if there was an exact solution found;
             #    that way we know if we might need to loop back around again to find the solution
             is_exact_solution = simOMPL.hasExactSolution(self.ompl_task)
+
+            # -- if no exact solution was found... then maybe we will compute again?
             sim.addLog(sim.verbosity_default, f"[OMPLement] : Exact solution found? -- {is_exact_solution}")
 
             # sim.addLog(sim.verbosity_default, f"[OMPLement] : Distance to target -- {simOMPL.getGoalDistance(self.ompl_task)}")
 
-            # -- if no exact solution was found... then maybe we will compute again?
-
             if result and is_exact_solution:
                 # -- We found a collision-free path!
-
-                simOMPL.printTaskInfo(self.ompl_task)
 
                 # NOTE: the path contains a Mx1 vector, which needs to be transformed to NxJ vector, where N = M/J.
                 # -- the final path will be stored as a NxJ matrix, where N = number of points in trajectory and J = number of joints.
@@ -592,6 +625,7 @@ def ompl_path_planning(args):
                 assert simOMPL.getPathStateCount(self.ompl_task,path) == len(final_path), "[OMPLement] : error in path rebuild?"
 
                 break
+
 
         simOMPL.destroyTask(self.ompl_task)
 

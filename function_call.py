@@ -2,6 +2,9 @@ import os
 import sys
 import time
 import math
+from random import randint, shuffle
+
+from driver import Interfacer
 
 from scipy.interpolate import CubicSpline
 import numpy as np
@@ -13,285 +16,323 @@ except ImportError:
           'https://manual.coppeliarobotics.com/en/zmqRemoteApiOverview.htm')
     sys.exit()
 
-client = RemoteAPIClient(host='localhost')
-
-sim = client.require('sim')
-# status = sim.loadScene(os.path.abspath('./panda_uibk_ffrob_problem32_close_blocks_ompl_david_bounds.ttt'))
-status = sim.loadScene(os.path.abspath('./panda_blocks_simple.ttt'))
-
-# -- loading required modules for simulation:
-simIK = client.require('simIK')
-simOMPL = client.require('simOMPL')
-
 robot_name = "Panda"
 
-def move_to_configs(path: list[float]):
-    # NOTE: check the sim.moveToConfig() docs here: https://manual.coppeliarobotics.com/en/regularApi/simMoveToConfig.htm
-    vel = 120
-    accel = 60
-    jerk = 60
+sim_interfacer = Interfacer(
+    scene_file_name='./panda_blocks_simple.ttt',
+    robot_name=robot_name,
+    robot_gripper=f"{robot_name}_gripper",
+)
 
-    maxVel = [vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180, vel*math.pi/180]
-    maxAccel = [accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180, accel*math.pi/180]
-    maxJerk = [jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180, jerk*math.pi/180]
+def pick(
+    target_object: str,
+    ompl_args: dict = {},
+    affordance: str = 'pick-top',
+):
+    start_time = time.time()
 
-    # -- get all the joint angles of the robot:
-    joint_handles = []
-    num_joints = 1
+    goal_achieved = False
 
+    # -- we will try to find configs with OMPL and find a collision-avoiding plan up to a certain number of times
+    for _ in range(3 if target_object in ['table', 'worksurface'] else 1):
+        # -- we will be generous and allow three attempts at finding an empty place on the table:
+        goal_poses = sim_interfacer.ompl_find_pose(target_object, affordance)
+
+        for G in range(len(goal_poses)):
+            # -- use the OMPL-based path planning method:
+            success = sim_interfacer.ompl_path_planning(
+                target_object,
+                goal_poses[G],
+                dict(ompl_args),
+            )
+
+            # -- check if we succeeded with this particular pose:
+            if success:
+                goal_achieved = goal_poses[G]
+                break
+
+        if bool(goal_achieved): break
+
+    # -- if we could not find a plan, then we just return:
+    if not goal_achieved: return False
+
+    # -- close the gripper
+    sim_interfacer.act_end_effector(action=1)
+
+    time.sleep(0.5)
+
+    # -- move the end-effector up:
+    goal_achieved[2] += 0.1
+
+    # NOTE: post-grasping check below:
+    # -- get the object handles for the gripper's attach point:
+    gripper_attachPoint = -1
+    children = sim_interfacer.sim.getObjectsInTree(sim_interfacer.sim.getObject(f"/{sim_interfacer.robot_name}"))
+    for C in children:
+        if "attachPoint" in sim_interfacer.sim.getObjectAlias(C):
+            gripper_attachPoint = C
+
+    obj_in_hand = sim_interfacer.sim.getObjectChild(gripper_attachPoint, 0)
+    if obj_in_hand > -1:
+        # -- this means that we want to move the gripper up to remove the object from the top of the below object's surface:
+        start = sim_interfacer.sim.getObjectPosition(sim_interfacer.sim.getObject(f'/{sim_interfacer.robot_name}/target'), sim_interfacer.sim.getObject(f'/{sim_interfacer.robot_name}')) + sim_interfacer.sim.getObjectOrientation(sim_interfacer.sim.getObject(f'/{sim_interfacer.robot_name}/target'), sim_interfacer.sim.getObject(f'/{sim_interfacer.robot_name}'))
+        end = list(start)
+        # -- we want to move up by half the height of the object:
+        # end[2] += sim_interfacer.sim.getObjectFloatParam(obj_in_hand, sim_interfacer.sim.objfloatparam_objbbox_max_z)
+        end[2] += 0.02
+
+        # -- we also want to pick up the object and align it with the base of the robot:
+
+        traj_move_up = sim_interfacer.spline_adjust_trajectory(
+            sim_interfacer.generate_trajectory({'time': [0, 1], 'trajectory': [start, end]}, ntraj=25)
+        )
+
+        # -- execute the trajectory but do not change the state of the gripper:
+        sim_interfacer.execute_trajectory(traj_move_up)
+
+        if target_object in sim_interfacer.sim.getObjectAlias(obj_in_hand):
+        # -- this means that we have successfully grasped the intended object:
+            return True
+
+    print(f'\t-- total time: {time.time() - start_time}')
+
+    return False
+
+
+def place(
+    target_object: str,
+    ompl_args: dict = {},
+    affordance: str = 'place-top',
+):
+    start_time = time.time()
+
+    goal_achieved = False
+
+    # -- we will try to find configs with OMPL and find a collision-avoiding plan up to a certain number of times
+    for _ in range(3 if target_object in ['table', 'worksurface'] else 1):
+        # -- we will be generous and allow three attempts at finding an empty place on the table:
+        goal_poses = sim_interfacer.ompl_find_pose(target_object, affordance)
+
+        for goal in goal_poses:
+            # -- use the OMPL-based path planning method:
+            success = sim_interfacer.ompl_path_planning(
+                target_object,
+                goal,
+                ompl_args,
+            )
+
+            # -- check if we succeeded with this particular pose:
+            if success:
+                goal_achieved = success
+                break
+
+        if goal_achieved: break
+
+    # -- if we could not find a plan, then we just return:
+    if not goal_achieved: return False
+
+    # -- close the gripper
+    sim_interfacer.act_end_effector(action=0)
+
+    time.sleep(1)
+
+    print(f'\t-- total time: {time.time() - start_time}')
+
+    return True
+
+
+def pour(
+    source_container: str,
+    target_container: str,
+    ompl_args: dict = {},
+):
+    start_time = time.time()
+
+    # NOTE: pouring comprises of the following subactions:
+    #   1. pre-pouring: positioning a source container to a target container
+    #   3. rotate the source container to transfer contents
+    #   4. place the source container back somewhere
+
+    # -- now, we need to find a path for pre-pouring:
     while True:
-        # -- using "noError" so default handle is -1 (if not found);
-        #    read more here: https://manual.coppeliarobotics.com/en/regularApi/simGetObject.htm
-        obj_handle = sim.getObject(f"/{robot_name}/joint", {"noError": True, "index":(num_joints-1)})
+        result = sim_interfacer.ompl_path_planning(
+            target_object=target_container,
+            goal_pose=sim_interfacer.ompl_find_pose(
+                target_object=target_container,
+                affordance='pour',
+            )[0],
+            ompl_args=ompl_args,
+        )
 
-        if obj_handle == -1: break
+        if result: break
 
-        joint_handles.append(obj_handle)
-        num_joints += 1
+    target = sim_interfacer.sim.getObject(f'/{sim_interfacer.robot_name}/target')
+    robot = sim_interfacer.sim.getObject(f'/{sim_interfacer.robot_name}')
 
-    # -- change the simulation setting to stepping mode for threaded/non-blocking execution:
-    sim.setStepping(True)
-    sim.step()
+    src_object_pos = sim_interfacer.sim.getObjectPosition(target, robot)
+    tgt_object_pos = sim_interfacer.sim.getObjectPosition(sim_interfacer.sim.getObject(f"/{target_container}"), robot)
 
-    # -- iterate through the entire plan of robot configurations:
-    for P in range(len(path)):
-        params = {
-            'joints': joint_handles,
-            'targetPos': path[P],
-            # 'maxVel': maxVel,
-            'targetVel': [0.8 * x for x in maxVel],
-            # 'maxAccel': maxAccel,
-            # 'maxJerk': maxJerk,
-        }
-        sim.moveToConfig(params)
-        sim.step()
+    # -- let's determine the direction of pouring:
+    pour_direction = 'left' if src_object_pos[1] > tgt_object_pos[1] else 'right'
 
-    # -- turn off stepping mode since we don't need it beyond this point:
-    sim.setStepping(False)
+    # -- this is the maximum angle we will perform rotation:
+    max_rotation = 120
+
+    # -- get the initial pose of the gripper:
+    start = sim_interfacer.sim.getObjectPose(target, robot)
+
+    trajectory = [start]
+
+    # -- rotate forward...
+    for angle in range(max_rotation):
+        end = sim_interfacer.sim.rotateAroundAxis(start, [1, 0, 0], start[:3], (angle * math.pi/180) * (-1.0 if pour_direction == "right" else 1.0))
+        sim_interfacer.sim.setObjectPose(target, end, robot)
+        trajectory.append(list(end))
+        time.sleep(0.001)
+
+    time.sleep(1)
+    trajectory.reverse()
+
+    # ... and back!
+    for pose in trajectory:
+        sim_interfacer.sim.setObjectPose(target, pose, robot)
+        time.sleep(0.001)
+
+    print(f'\t-- total time: {time.time() - start_time}')
+
+    return True
 
 
-def ompl_path_planning(
-        target_object: str,
-        goal_pose: list[float],
-        ompl_args: dict = {},
-        draw_path: bool = True,
-        motion_method: str = "moveToConfig",
-    ) -> bool:
+all_blocks = ["B_block_1", "D_block_1", "C_block_1", "P_block_1"]
+shuffle(all_blocks)
 
-    # -- formatting the string name for printing a cool message:
-    if target_object:
-        sim.addLog(sim.verbosity_default, f'[FOON-TAMP]: finding a plan to object "{target_object}"...')
-        print(f'[FOON-TAMP]: finding a plan to object "{target_object}"...')
+setting = randint(0,1)
+setting = 0
 
-    # -- create a dummy object that will represent the target goal:
-    target_goal = sim.createDummy(0.025)
-    sim.setObjectPose(target_goal, goal_pose, sim.getObject(f'/{robot_name}'))
-    sim.setObjectColor(target_goal, 0, sim.colorcomponent_ambient_diffuse, [0.0, 1.0, 0.0])
-    sim.setObjectColor(target_goal, 0, sim.colorcomponent_emission, [0.6, 0.6, 0.6])
-    sim.setObjectAlias(target_goal, 'OMPL_target')
+sim_interfacer.start()
 
-    # -- we sleep for a bit so we can see this object appear in the sim:
-    time.sleep(0.0001)
+if bool(setting):
+    for obj in all_blocks:
+        success = sim_interfacer.execute(
+            target_object=obj,
+            ompl_args={
+                "ompl_state_resolution": float("5.0e-3"),
+                "ompl_use_lua": True,
+                "ompl_algorithm": "RRTConnect",
+                "ompl_motion_constraint": "y",
+            },
+            gripper_action=0
+        )
+else:
+    print("stacking")
 
-    # NOTE: checking if key parameters have been specified for OMPL:
-    if not bool(ompl_args): ompl_args = {}
-    if "ompl_algorithm" not in ompl_args:
-        ompl_args["ompl_algorithm"] = "RRTConnect"
-    try:
-        ompl_args['ompl_algorithm'] = eval(f"simOMPL.Algorithm.{ompl_args['ompl_algorithm']}")
-    except AssertionError:
-        print(f"WARNING: {ompl_args['ompl_algorithm']} is not a valid algorithm!")
-        ompl_args['ompl_algorithm'] = eval(f"simOMPL.Algorithm.RRTConnect")
-    if "ompl_num_attempts" not in ompl_args:
-        ompl_args["ompl_num_attempts"] = 5
-    if "ompl_max_compute" not in ompl_args:
-        ompl_args["ompl_max_compute"] = 15
-    if "ompl_max_simplify" not in ompl_args:
-        # NOTE: let OMPL do default simplification, signified by -1:
-        ompl_args["ompl_max_simplify"] = -1
-    if "ompl_len_path" not in ompl_args:
-        # NOTE: let OMPL do give default number of configs in solution path, signified by 0:
-        ompl_args["ompl_len_path"] = 0
-    if "ompl_state_resolution" not in ompl_args:
-        ompl_args["ompl_state_resolution"] = float("5.0e-3")
-    if "ompl_use_state_validation" not in ompl_args:
-        ompl_args["ompl_use_state_validation"] = True
-    if "ompl_use_lua" not in ompl_args:
-        ompl_args["ompl_use_lua"] = True
-    if "ompl_motion_constraints" not in ompl_args:
-        ompl_args["ompl_motion_constraints"] = "free"
+    # -- do series of block-stacking:
+    for x in range(1, len(all_blocks)):
+        success = pick(
+            target_object=all_blocks[x],
+            ompl_args={
+                "ompl_state_resolution": float("2.5e-3"),
+                "ompl_use_lua": True,
+                "ompl_algorithm": "RRTConnect",
+                "ompl_motion_constraint": "free",
+                "ompl_max_compute": 15,
+                "ompl_max_simplify": 15,
+            })
 
-    print(ompl_args)
+        success = place(
+            target_object=all_blocks[x-1],
+            ompl_args={
+                "ompl_state_resolution": float("2.5e-3"),
+                "ompl_use_lua": True,
+                "ompl_algorithm": "RRTConnect",
+                "ompl_motion_constraint": "z",
+                "ompl_max_compute": 15,
+                "ompl_max_simplify": 15,
+            },
+            affordance='place-top')
 
-    ompl_script = sim.getScript(sim.scripttype_simulation, sim.getObject('/OMPLement'))
+    success = pick(
+        target_object="bottle_vodka",
+        ompl_args={
+            "ompl_state_resolution": float("2.5e-3"),
+            "ompl_use_lua": True,
+            "ompl_algorithm": "RRTConnect",
+            "ompl_motion_constraint": "free",
+            "ompl_max_compute": 15,
+            "ompl_max_simplify": 15,
+        },
+        affordance='pick-side',
+    )
 
-    path, _ = sim.callScriptFunction(
-        "ompl_path_planning",
-        ompl_script,
-        {
-            "robot": robot_name,
-            "goal": target_goal,
-            "ompl_algorithm": ompl_args["ompl_algorithm"],
-            "ompl_max_compute": ompl_args["ompl_max_compute"],
-            "ompl_max_simplify": ompl_args["ompl_max_simplify"],
-            "ompl_len_path": ompl_args["ompl_len_path"],
-            "ompl_state_resolution": ompl_args["ompl_state_resolution"],
-            "ompl_motion_constraints": ompl_args["ompl_motion_constraints"],
-            "ompl_use_state_validation": ompl_args["ompl_use_state_validation"],
-            "ompl_use_lua": ompl_args["ompl_use_lua"],
+    if not success: sys.exit("ERROR: no object in hand for pouring!")
+
+    success = pour(
+        source_container="bottle_vodka",
+        target_container="drinking_glass",
+        ompl_args={
+            "ompl_state_resolution": float("2.5e-3"),
+            "ompl_use_lua": True,
+            "ompl_algorithm": "RRTConnect",
+            "ompl_motion_constraint": "x",
+            "ompl_max_compute": 15,
+            "ompl_max_simplify": 15,
         },
     )
 
-    if path:
-        print(f'[FOON-TAMP]: plan found!')
-        sim.addLog(sim.verbosity_default, f'[FOON-TAMP]: plan found!')
+    success = place(
+        target_object="table",
+        ompl_args={
+            "ompl_state_resolution": float("2.5e-3"),
+            "ompl_use_lua": True,
+            "ompl_algorithm": "RRTConnect",
+            "ompl_motion_constraint": "x",
+            "ompl_max_compute": 15,
+            "ompl_max_simplify": 15,
+        },
+        affordance='place-top',
+    )
 
-        # -- we need to disable the IK following done by the "target" dummy of the robot:
-        # sim.setModelProperty(target, sim.modelproperty_scripts_inactive)
-        ik_script = sim.getScript(sim.scripttype_simulation, sim.getObject(f"/{robot_name}"))
-        if ik_script == -1:
-            ik_script = sim.getScript(sim.scripttype_customization, sim.getObject(f"/{robot_name}"))
+    success = pick(
+        target_object="drinking_glass",
+        ompl_args={
+            "ompl_state_resolution": float("2.5e-3"),
+            "ompl_use_lua": True,
+            "ompl_algorithm": "RRTConnect",
+            "ompl_motion_constraint": "free",
+            "ompl_max_compute": 15,
+            "ompl_max_simplify": 15,
+        },
+        affordance='pick-side',
+    )
 
-        sim.setObjectInt32Param(ik_script, sim.scriptintparam_enabled, 0)
-
-        # -- if set to true, we will draw the path in the simulation:
-        if draw_path: drawn_object = sim.callScriptFunction('visualizePath', ompl_script, path, [0.0, 1.0, 0.0])
-
-        time.sleep(0.01)
-
-        if motion_method != "moveToConfig":
-            # -- use a cubic spline to interpolate time points:
-            cs = CubicSpline(
-                [0, 0.3, 0.5, 0.8, 1],
-                [float('2.5e-3'), float('2.0e-3'), float('1.0e-3'), float('2.0e-3'), float('2.5e-3')]
-            )
-            xs = np.arange(0, 1, 1/len(path))
-            time_points = cs(xs)
-
-            # -- with the computed path, we will gradually change the configuration of the robot:
-            for P in range(len(path)):
-                sim.callScriptFunction('setConfig_python', ompl_script, path[P])
-                time.sleep(time_points[P])
-        else:
-            move_to_configs(path)
-
-        time.sleep(0.01)
-
-        # -- we need to re-enable the IK following done by the "target" dummy of the robot:
-        sim.setObjectPosition(sim.getObject(f'/{robot_name}/target'), sim.getObjectPosition(sim.getObject(f'/{robot_name}/tip')), -1)
-        sim.setObjectOrientation(sim.getObject(f'/{robot_name}/target'), sim.getObjectOrientation(sim.getObject(f'/{robot_name}/tip')), -1)
-        sim.setObjectInt32Param(ik_script, sim.scriptintparam_enabled, 1)
-        if draw_path: sim.removeDrawingObject(drawn_object)
-
-    else:
-        sim.addLog(sim.verbosity_default, f'[FOON-TAMP]: plan not found!')
-        print(f'[FOON-TAMP]: plan not found!')
-
-    # -- remove the OMPL target object:
-    sim.removeObjects([sim.getObject('/OMPL_target')])
-
-    return bool(path)
+    if not success: sys.exit("ERROR: no object in hand for pouring!")
 
 
-def find_pose_for_ompl(
-        robot_name: str,
-        target_object: str,
-    ) -> list[float]:
+    success = pour(
+        source_container="drinking_glass",
+        target_container="drinking_glass_2",
+        ompl_args={
+            "ompl_state_resolution": float("2.5e-3"),
+            "ompl_use_lua": True,
+            "ompl_algorithm": "RRTConnect",
+            "ompl_motion_constraint": "x",
+            "ompl_max_compute": 15,
+            "ompl_max_simplify": 15,
+        },
+    )
 
-    robot = sim.getObject(f"/{robot_name}")
-    target = sim.getObject(f"/{robot_name}/target")
+    success = place(
+        target_object="table",
+        ompl_args={
+            "ompl_state_resolution": float("2.5e-3"),
+            "ompl_use_lua": True,
+            "ompl_algorithm": "RRTConnect",
+            "ompl_motion_constraint": "x",
+            "ompl_max_compute": 15,
+            "ompl_max_simplify": 15,
+        },
+        affordance='place-top',
+    )
 
-    index = 0
-    # # -- check if the target object refers to the table, as we will have to find an empty spot:
-    # if target_object in ["table", "worksurface"]:
-    #     empty_spot = choice(find_empty_spots())
-    #     index, target_object = empty_spot['index'], sim.getObjectAlias(empty_spot['handle'])
-    #     sim.addLog(sim.verbosity_default, f"table grounding: found empty spot: /{target_object}[{empty_spot['index']}]")
-    #     if verbose:
-    #         print(f"table grounding: found empty spot: /{target_object}[{empty_spot['index']}]")
-
-    goal = sim.getObject(f"/{target_object}", {"index": index})
-
-    candidate_goal_poses = []
-
-    for rotate in [0.0, (math.pi)]:
-        # -- Find a collision-free config that matches a specific pose:
-        goal_pose = sim.getObjectPose(goal, robot)
-
-        # -- get the object handles for the gripper's attach point:
-        gripper_attachPoint = -1
-        children = sim.getObjectsInTree(sim.getObject(f"/{robot_name}"))
-        for C in children:
-            if "attachPoint" in sim.getObjectAlias(C):
-                gripper_attachPoint = C
-
-        if gripper_attachPoint == -1:
-            sys.exit("ERROR: robot gripper attach point was not found!")
-
-        # -- determine the height based on whether there is an object in hand or not:
-        obj_in_hand = sim.getObjectChild(gripper_attachPoint, 0)
-        if obj_in_hand != -1:
-            # -- first, we find a spot that sits RIGHT ON TOP of the surface...
-            goal_pose[2] += sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_z)
-            # ... then we will find a spot that considers the height of the object:
-            goal_pose[2] += sim.getObjectFloatParam(obj_in_hand, sim.objfloatparam_objbbox_max_z) * (1.5 if target_object not in ["table", "worksurface"] else 1.25)
-
-            # -- we also want to consider the orientation of the object
-            orientation = sim.getObjectOrientation(goal, target)
-            goal_pose[3:] = sim.buildPose(goal_pose[:3], [orientation[0], orientation[1], math.pi + rotate])[3:]
-
-        else:
-            # -- account for fingertip placement on object:
-            goal_pose[2] += sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_z) * 3.0
-            # -- try to match the orientation of the surface object:
-            orientation = sim.getObjectOrientation(goal, robot)
-            goal_pose[3:] = sim.buildPose(goal_pose[:3], [-(math.pi), orientation[1], orientation[2] + rotate])[3:]
-
-        # NOTE: these are the ideal poses that Alejandro would use for picking from the side:
-        # if obj_in_hand != -1:
-        #     # -- first, we find a spot that sits RIGHT ON TOP of the surface...
-        #     goal_pose[0] += sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_x)
-        #     # ... then we will find a spot that considers the height of the object:
-        #     goal_pose[0] += sim.getObjectFloatParam(obj_in_hand, sim.objfloatparam_objbbox_max_x) * (1.5 if target_object not in ["table", "worksurface"] else 1.25)
-
-        #     # -- we also want to consider the orientation of the object
-        #     orientation = sim.getObjectOrientation(goal, target)
-        #     goal_pose[3:] = sim.buildPose(goal_pose[:3], [orientation[0], orientation[1], math.pi + rotate])[3:]
-
-        # else:
-        #     # -- account for fingertip placement on object:
-        #     goal_pose[0] -= sim.getObjectFloatParam(goal, sim.objfloatparam_objbbox_max_x) * 3
-        #     # -- try to match the orientation of the surface object:
-        #     orientation = sim.getObjectOrientation(goal, robot)
-        #     goal_pose[3:] = sim.buildPose(goal_pose[:3], [orientation[0], math.pi/2, orientation[2] + rotate])[3:]
-
-        candidate_goal_poses.append(goal_pose)
-
-    return candidate_goal_poses
-
-sim.startSimulation()
-
-try:
-    for target_object in ["B_block_1", "D_block_3", "C_block_3"]:
-        goal_poses = find_pose_for_ompl(
-            robot_name=robot_name,
-            target_object=target_object,
-        )
-
-        for _ in range(1):
-            for G in goal_poses:
-                success = ompl_path_planning(
-                    target_object=target_object,
-                    goal_pose=G,
-                    ompl_args={
-                        "ompl_state_resolution": float("5.0e-3"),
-                        "ompl_use_lua": True,
-                        "ompl_algorithm": "RRTStar",
-                    },
-                )
-except Exception as e:
-    print(e)
-    pass
-
-sim.stopSimulation()
+sim_interfacer.stop()
 pass
