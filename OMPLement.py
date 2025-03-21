@@ -188,7 +188,6 @@ function checkAxisSimilarity_lua(poseA, poseB)
     local transformedAxisA, transformedAxisA = -1, -1
 
     for _, axis in ipairs(axes) do
-        print(axis)
         if axis == "x" then
             -- Extract X-axis from the rotation matrices
             transformedAxisA = sim.multiplyVector(rotMatrixA, xAxis) -- gets first column of rotation matrix - represents vector of X axis {Xx, Xy, Xz}
