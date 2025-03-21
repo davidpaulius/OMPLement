@@ -37,21 +37,18 @@ function stateValidationCollision_lua(config)
 end
 
 
-function luaStateValidationData(data)
+function luaFixedAxisData(data)
     -- 'robot' and 'tip' refer to the handles of the robot and the tip of the end-effector:
-    robot = data["robot"]
-    tip = data["tip"]
+    robot, tip = data["robot"], data["tip"]
 
-    -- 'constrained_axis' refers to any value in ["free", "x", "y", "z"]:
-    axis = data["constrained_axis"]
+    -- 'axis' refers to any value in ["free", "x", "y", "z"]:
+    axis = data["axis"]
 
-    -- 'sim_threshold' will reflect how "aligned" the poses must be along a given axis;
-    --     for *dot product similarity* -- if two vectors are aligned, their dot product will be equal to 1:
-    sim_threshold = data["alignment"]
-
-    pose_limits = nil
-    if data["pose_limits"] then
-        pose_limits = data["pose_limits"]
+    -- this value will reflect how "aligned" the poses must be along a given axis:
+    if not data["alignment"] then
+        margin = 0.8
+    else
+        margin = data["alignment"]
     end
 
     -- TODO: are there any other values needed?
@@ -59,73 +56,28 @@ end
 
 
 function stateValidationFixedAxis_lua(config)
+    -- check if a configuration is valid, i.e., doesn't collide:
     -- save current config:
     local tmp = getConfig_lua()
 
-    -- get the pre-motion pose of the end-effector's tip:
-    local initial_pose = sim.getObjectPose(tip, -1)
+    initial_pose = sim.getObjectPose(tip, -1)
 
     -- apply new config:
     setConfig_lua(config)
 
-    -- get the new pose of the end-effector's tip after moving to the candidate config:
-    local next_pose = sim.getObjectPose(tip, -1)
-
-    -- does new config collide?
-    local is_collision, _ = sim.checkCollision(robot_collection, sim.handle_all)
+    next_pose = sim.getObjectPose(tip, -1)
 
     -- restore original config:
     setConfig_lua(tmp)
-
-    if (is_collision ~= 0) then
-        return false
-    end
 
     -- NOTE: the initial pose of the robot's hand will be passed by auxiliary function:
-    --  variable names: axis, margin, initial_pose
-    local is_aligned = checkAxisSimilarity_lua(initial_pose, next_pose, axis, margin)
-
-    -- if we have passed both checks, then this is a valid state:
-    return (is_aligned == true)
-end
-
-
-function stateValidationPoseLimits_lua(config)
-    -- check if a configuration is valid, i.e., doesn't collide:
-    if not stateValidationCollision_lua(config) then
+    --      variable names: axis, margin, initial_pose
+    if checkAxisSimilarity_lua(initial_pose, next_pose, axis, margin) == false then
         return false
     end
 
-    -- save current config:
-    local tmp = getConfig_lua()
-
-    -- apply new config:
-    setConfig_lua(config)
-
-    -- get the new pose of the end-effector's tip after moving to the candidate config:
-    local next_pose = sim.getObjectPose(tip, -1)
-
-    -- does new config collide?
-    local is_collision, _ = sim.checkCollision(robot_collection, sim.handle_all)
-
-    -- restore original config:
-    setConfig_lua(tmp)
-
-    if (is_collision ~= 0) then
-        return false
-    end
-
-    -- we will focus on the orientation portion (quaternions) of the pose:
-    for X=4,#next_pose,1 do
-        if next_pose[X] > pose_limits['upper'][X] then
-            return false
-        elif next_pose[X] < pose_limits['lower'][X] then
-            return false
-        end
-    end
-
-    -- if we have passed both checks, then this is a valid state:
-    return true
+    -- if the axis alignment test passes, then we check for collisions:
+    return stateValidationCollision_lua(config)
 end
 
 
@@ -140,7 +92,7 @@ function luaFindIKConfig(data)
 
     params = {
         maxDist = 0.05,
-        maxTime = 1,
+        maxTime = 3,
         findMultiple = false, -- change to True to find multiple solutions
         pMetric = {0.05,0.05,0.05,0.1},
         cb = stateValidationCollision_lua
@@ -172,13 +124,31 @@ function luaOMPLCompute(data)
 end
 
 
----------------------------------------------------------------------------------------
--- NOTE: this function is a modified version of a function from the following thread:
---      https://forum.coppeliarobotics.com/viewtopic.php?t=10200
----------------------------------------------------------------------------------------
-function checkAxisSimilarity_lua(poseA, poseB, axis, sim_threshold)
+-- Function to check if the X-axis of object B is similar to the X-axis of object A
+function checkXAxisSimilarity(orientationA, orientationB, margin)
+    local xAxisA = {1, 0, 0}  -- X-axis vector (global frame) for object A
+
+    -- Convert orientations to rotation matrices
+    local rotMatrixA = sim.buildMatrix({0, 0, 0}, orientationA)
+    local rotMatrixB = sim.buildMatrix({0, 0, 0}, orientationB)
+
+    -- Extract X-axis from the rotation matrices
+    local transformedXAxisA = sim.multiplyVector(rotMatrixA, xAxisA) -- gets first column of rotation matrix - represents vector of X axis {Xx, Xy, Xz}
+    local transformedXAxisB = sim.multiplyVector(rotMatrixB, xAxisA)
+
+    -- Check similarity between the X-axes: dot product of a vector with itself is the square of its magnitude
+    local dotProduct = transformedXAxisA[1] * transformedXAxisB[1] + transformedXAxisA[2] * transformedXAxisB[2] + transformedXAxisA[3] * transformedXAxisB[3]
+
+    if dotProduct > margin then -- if dotProduct is near to 1 then X axes are similarly aligned.
+        return true
+    end
+    return false
+end
+
+
+function checkAxisSimilarity_lua(poseA, poseB, axis, margin)
     -- NOTE: axis can be some kind of string in ["x", "y", "z", "free"],
-    --  'sim_threshold' refers to how "similar" the axis must be aligned to some given reference:
+    --  'margin' refers to how "similar" the axis must be aligned to some given reference:
     local xAxisA = {1, 0, 0}  -- X-axis vector (global frame) for object A
     local yAxisA = {0, 1, 0}  -- Y-axis vector (global frame) for object A
     local zAxisA = {0, 0, 1}  -- Z-axis vector (global frame) for object A
@@ -216,7 +186,7 @@ function checkAxisSimilarity_lua(poseA, poseB, axis, sim_threshold)
         + (transformedAxisA[2] * transformedAxisB[2])
         + (transformedAxisA[3] * transformedAxisB[3])
 
-    if dotProduct > sim_threshold then -- if dotProduct is near to 1 then X axes are similarly alligned.
+    if dotProduct > margin then -- if dotProduct is near to 1 then X axes are similarly alligned.
         return true
     end
 
@@ -428,10 +398,6 @@ def parse_args(args):
     assert "robot" in args, "[OMPLement] : Robot name not defined!"
     self.robot_name = args["robot"]
 
-    # -- make the robot collection a global object:
-    self.robot_collection = sim.createCollection()
-    sim.addItemToCollection(self.robot_collection, sim.handle_tree, self.robot, 0)
-
     # NOTE: we will create a dummy object representing the target for planning!
     # -- extract the goal object given as input to this function:
     assert "goal" in args, "[OMPLement] : Goal not defined!"
@@ -466,27 +432,22 @@ def parse_args(args):
         self.ompl_state_resolution = args["ompl_state_resolution"]
     else:
         # -- by default, use this resolution value:
-        self.ompl_state_resolution = float("5.0e-3")
+        self.ompl_state_resolution = float("1.0e-2")
 
-    # NOTE: we should always use lua whenever possible since it is faster:
-    if "ompl_use_lua" in args:
-        self.ompl_use_lua = args["ompl_use_lua"]
-
-    # -- ompl_use_state_validation :- this indicates whether state validation will be used in OMPL computation:
-    self.ompl_use_state_validation = True
-    if "ompl_use_state_validation" in args:
-        self.ompl_use_state_validation = args["ompl_use_state_validation"]
-
-    # -- ompl_motion_constraint :- this indicates whether some axis needs to be fixed for path planning:
+    # -- ompl_motion_constraint :- this will indicate whether some axis needs to be fixed for path planning:
     self.ompl_motion_constraint = "free"
     if "ompl_motion_constraint" in args:
         self.ompl_motion_constraint = args["ompl_motion_constraint"]
 
-    # NOTE: rather than restricting motion based on a single axis as above,
-    #   we can indicate limits for each axis:
-    self.ompl_pose_limits = None
-    if "ompl_pose_limits" in args:
-        self.ompl_pose_limits = args["ompl_pose_limits"]
+    # -- make the robot collection a global object:
+    self.robot_collection = sim.createCollection()
+    sim.addItemToCollection(self.robot_collection, sim.handle_tree, self.robot, 0)
+
+    if "ompl_use_lua" in args:
+        self.ompl_use_lua = args["ompl_use_lua"]
+
+    if "ompl_use_state_validation" in args:
+        self.ompl_use_state_validation = args["ompl_use_state_validation"]
 
 #end
 
@@ -565,7 +526,8 @@ def ompl_path_planning(args):
         simOMPL.setVerboseLevel(self.ompl_task, 1)
 
         if self.ompl_use_state_validation:
-            # NOTE: state validation is typically slow, but pretty decent when used in lua mode:
+            # WARNING: state validation is slow, probably best not to use it:
+
             if self.ompl_motion_constraint == "free":
                 if self.verbose:
                     sim.addLog(sim.verbosity_default, "[OMPLement] : Considering free-axis orientation...")
@@ -574,28 +536,22 @@ def ompl_path_planning(args):
                 else:
                     simOMPL.setStateValidationCallback(self.ompl_task, 'stateValidationCollision_lua')
 
-            else:
-                # -- we are adding extra constraints for state validation (beyond collision):
-                state_validation_data = {
+            elif self.ompl_motion_constraint in ["x", "y", "z"]:
+                if self.verbose:
+                    sim.addLog(sim.verbosity_default, f"[OMPLement] : Considering fixed-axis orientation (axis={self.ompl_motion_constraint})...")
+
+                # TODO: fix this:
+                data = {
                     "robot": self.robot,
                     "tip": self.tip,
-                    "alignment": 0.99,
-                    "constrained_axis": self.ompl_motion_constraint,
-                    "pose_limits": self.ompl_pose_limits,
+                    "axis": self.ompl_motion_constraint,
+                    "alignment": 0.990,
                 }
-
                 # -- send some necessary values to the state validation checker:
-                sim.callScriptFunction("luaStateValidationData", sim.handle_self, state_validation_data)
-
-                if self.ompl_pose_limits:
-                    # -- we are going to use the lua version no matter what:
-                    simOMPL.setStateValidationCallback(self.ompl_task, "stateValidationPoseLimits_lua")
-
-                elif self.ompl_motion_constraint in ["x", "y", "z"]:
-                    if self.verbose:
-                        sim.addLog(sim.verbosity_default, f"[OMPLement] : Considering fixed-axis orientation (axis={self.ompl_motion_constraint})...")
-
-                    # -- we are going to use the lua version no matter what:
+                sim.callScriptFunction("luaFixedAxisData", sim.handle_self, data)
+                if not self.ompl_use_lua:
+                    simOMPL.setStateValidationCallback(self.ompl_task, "stateValidationFixedAxis_lua")
+                else:
                     simOMPL.setStateValidationCallback(self.ompl_task, "stateValidationFixedAxis_lua")
 
         simOMPL.setup(self.ompl_task)
