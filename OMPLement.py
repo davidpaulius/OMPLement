@@ -44,7 +44,6 @@ function luaStateValidationData(data)
 
     -- 'constrained_axis' refers to any value in ["free", "x", "y", "z"]:
     axes = data["axes"]
-    print(axes)
 
     -- 'sim_threshold' will reflect how "aligned" the poses must be along a given axis;
     --     for *dot product similarity* -- if two vectors are aligned, their dot product will be equal to 1:
