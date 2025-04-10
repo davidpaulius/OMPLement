@@ -335,11 +335,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--scene",
         type=str,
-        default='./utamp/scenes/panda_stacking.ttt',
+        default='./',
         help="This specifies a set of goal predicates as a string."
     )
 
     args = parser.parse_args()
+    if not eval(args.goal):
+        utamp_goals = [
+            "(on blockc blocka)",
+            "(under blocka blockc)",
+            "(on blocka air)",
+        ]
+    else:
+        utamp_goals = eval(args.goal)
 
     utamp_client = UTAMPClient(
         sim_interfacer=Interfacer(
@@ -350,4 +358,4 @@ if __name__ == "__main__":
         config_fpath='utamp.config.json',
     )
 
-    utamp_client.plan_and_execute(goals_for_utamp=eval(args.goal))
+    utamp_client.plan_and_execute(goals_for_utamp=utamp_goals)
