@@ -307,7 +307,7 @@ def stateValidationOrientation_python(config):
         return False
 
 
-def findIKConfig(args):
+def find_ik_config(args):
     # -- Prepare robot collection:
     self.robot_collection = sim.createCollection()
     sim.addItemToCollection(self.robot_collection, sim.handle_tree, self.robot, 0)
@@ -530,7 +530,7 @@ def ompl_path_planning(args):
     parse_args(args)
 
     # -- find a valid configuration that puts the robot's gripper at the goal location:
-    valid_config = findIKConfig(args)
+    valid_config = find_ik_config(args)
 
     ################################################################################################
 

@@ -4,11 +4,8 @@ import time
 import argparse
 import math
 import numpy as np
-import json
-import mysql.connector as sql
 
 from random import choice
-from typing import Type
 from scipy.interpolate import CubicSpline
 
 try:
@@ -18,17 +15,16 @@ except ImportError:
           'https://manual.coppeliarobotics.com/en/zmqRemoteApiOverview.htm')
     sys.exit()
 
-
 # pip3 install numpy scipy openai tiktoken scikit-learn tqdm pandas coppeliasim-zmqremoteapi-client nltk mysql-connector
 
 class Interfacer():
     def __init__(
-            self,
-            scene_file_name: str,
-            robot_name: str = "Panda",
-            robot_gripper: str = "Panda_gripper",
-            port_number: int = None,
-        ):
+        self,
+        scene_file_name: str,
+        robot_name: str = "Panda",
+        robot_gripper: str = "Panda_gripper",
+        port_number: int = None,
+    ):
         self.robot_name = robot_name
         self.robot_gripper = robot_gripper
 
@@ -318,10 +314,10 @@ class Interfacer():
     ############################################################
 
     def check_if_contact(
-            self,
-            obj1: str,
-            obj2: str,
-        ) -> bool:
+        self,
+        obj1: str,
+        obj2: str,
+    ) -> bool:
 
         collision = self.sim.checkCollision(
             self.sim.getObject(f'/{obj1}') if not obj1.isnumeric() else obj1,
@@ -333,12 +329,12 @@ class Interfacer():
         return True
 
     def check_if_on_top(
-            self,
-            obj_above: str,
-            obj_below: str,
-            check_collision: bool = True,
-            verbose: bool = False,
-        ) -> bool:
+        self,
+        obj_above: str,
+        obj_below: str,
+        check_collision: bool = True,
+        verbose: bool = False,
+    ) -> bool:
 
         sim = self.sim
 
@@ -461,11 +457,11 @@ class Interfacer():
         return self.get_object_in_hand() != -1
 
     def perform_sensing(
-            self,
-            method: int = 1,
-            check_collision: bool = False,
-            verbose: bool = False,
-        ) -> dict:
+        self,
+        method: int = 1,
+        check_collision: bool = False,
+        verbose: bool = False,
+    ) -> dict:
         """"
         This function is used for all perception. There are 3 variations of sensing:
         1. **PDDL-based sensing** (returns a dictionary of in-on-under relations);
@@ -567,7 +563,7 @@ class Interfacer():
             return "".join(str_objects)
         #enddef
 
-        def sensing_for_pddl():
+        def state_to_pddl_predicates():
 
             in_object_layout, on_object_layout, under_object_layout = {}, {}, {}
 
@@ -691,9 +687,9 @@ class Interfacer():
             return {'on': on_object_layout, 'under': under_object_layout}
         #enddef
 
-        def sensing_for_text():
+        def state_to_text():
             # -- this sub-function will read the object-centered state dict and transform into sentences:
-            state, state_ments = sensing_for_pddl(), []
+            state, state_ments = state_to_pddl_predicates(), []
 
             for rel in state:
                 for obj1 in state[rel]:
@@ -708,21 +704,21 @@ class Interfacer():
         #enddef
 
         if method == 2: return sensing_for_utamp()
-        if method == 3: return sensing_for_text()
+        if method == 3: return state_to_text()
 
-        return sensing_for_pddl()
+        return state_to_pddl_predicates()
 
     ############################################################
     # NOTE: OMPL-related planning:
     ############################################################
 
     def ompl_get_target_pose(
-            self,
-            target_object: str,
-            affordance: str = 'pick-top',
-            verbose: bool = True,
-            skip_errors: bool = True,
-        ) -> list[float]:
+        self,
+        target_object: str,
+        affordance: str = 'pick-top',
+        verbose: bool = True,
+        skip_errors: bool = True,
+    ) -> list[float]:
 
         # -- get robot and end-effector target handles:
         robot = self.sim.getObject(f"/{self.robot_name}")
@@ -847,11 +843,11 @@ class Interfacer():
         return candidate_goal_poses
 
     def ompl_compute(
-            self,
-            target_pose: list[float],
-            target_object: str = None,
-            ompl_args: dict = {},
-        ) -> list[float]:
+        self,
+        target_pose: list[float],
+        target_object: str = None,
+        ompl_args: dict = {},
+    ) -> list[float]:
 
         # -- formatting the string name for printing a cool message:
         if target_object:
@@ -932,13 +928,13 @@ class Interfacer():
         return path
 
     def ompl_execute(
-            self,
-            target_object: str,
-            target_pose: list[float],
-            ompl_args: dict = {},
-            draw_path: bool = True,
-            ignore_dynamics: bool = False,
-        ) -> bool:
+        self,
+        target_object: str,
+        target_pose: list[float],
+        ompl_args: dict = {},
+        draw_path: bool = True,
+        ignore_dynamics: bool = False,
+    ) -> bool:
 
         path = self.ompl_compute(
             target_pose=target_pose,
@@ -1076,10 +1072,10 @@ class Interfacer():
         return trajectory
 
     def spline_path_planning(
-            self,
-            goal_pose: list[float],
-            num_ompl_attempts: int  = 5,
-        ) -> bool:
+        self,
+        goal_pose: list[float],
+        num_ompl_attempts: int  = 5,
+    ) -> bool:
 
         ompl_script = self.sim.getScript(self.sim.scripttype_simulation, self.sim.getObject('/OMPLement'))
 
@@ -1089,13 +1085,13 @@ class Interfacer():
         self.sim.setObjectColor(target_goal, 0, self.sim.colorcomponent_emission, [0.6, 0.6, 0.6])
         self.sim.setObjectAlias(target_goal, 'OMPL_target')
 
+        # -- check to see if there is a valid IK configuration for the given goal pose:
         config_found = self.sim.callScriptFunction(
             "find_ik_config",
             ompl_script,
             {
                 "robot": self.robot_name,
                 "goal": target_goal,
-                "num_attempts": num_ompl_attempts,
             },
         )
 
@@ -1168,12 +1164,12 @@ class Interfacer():
         return True
 
     def execute(
-            self,
-            target_object: str,
-            ompl_args: dict,
-            gripper_action: int,
-            method: int = 1, # 1 :- OMPL, not(1) :- spline interpolation
-        ) -> bool:
+        self,
+        target_object: str,
+        ompl_args: dict,
+        gripper_action: int,
+        method: int = 1, # 1 :- OMPL, not(1) :- spline interpolation
+    ) -> bool:
 
         # -- we will try to find configs with OMPL and find a collision-avoiding plan up to a certain number of times
         for _ in range(3 if target_object in ['table', 'worksurface'] else 1):
@@ -1236,7 +1232,7 @@ class Interfacer():
         # NOTE: post-grasping check below:
         obj_in_hand = self.get_object_in_hand()
         if gripper_action == 1:
-            if obj_in_hand > -1:
+            if obj_in_hand != -1:
                 # -- this means that we want to move the gripper up to remove the object from the top of the below object's surface:
                 start = self.sim.getObjectPosition(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObject(f'/{self.robot_name}')) + self.sim.getObjectOrientation(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObject(f'/{self.robot_name}'))
                 end = list(start)
@@ -1266,16 +1262,12 @@ class Interfacer():
         return False
 
     def execute_utamp(
-            self,
-            goal_poses: list[float],
-            gripper_action: int,
-            algorithm: str = 'RRTConnect',
-            num_ompl_attempts: int = 5,
-            max_compute: int = 5,
-            max_simplify: int = 5,
-            len_path: int = 0,
-            method: int = 1,
-        ) -> bool:
+        self,
+        goal_poses: list[float],
+        gripper_action: int,
+        ompl_args: dict = {},
+        method: int = 1, # 1 :- OMPL, not(1) :- spline interpolation
+    ) -> bool:
 
         # -- extract the pre-grasping/placing and post-grasping/placing poses:
         pre_grasp, post_grasp = goal_poses[0], goal_poses[1]
@@ -1283,12 +1275,6 @@ class Interfacer():
         # -- we need to convert coordinates from Euler angles to quaternions:
         pre_grasp = self.sim.buildPose(pre_grasp[:3], pre_grasp[3:])
         post_grasp = self.sim.buildPose(post_grasp[:3], post_grasp[3:])
-
-        try:
-            algorithm = eval(f'self.simOMPL.Algorithm.{algorithm}')
-        except AttributeError:
-            print(f'WARNING: path planning algorithm "{algorithm}" does not exist!')
-            algorithm = eval('self.simOMPL.Algorithm.RRTConnect')
 
         # -- we will try to find configs with OMPL and find a collision-avoiding plan up to a certain number of times
         success = False
@@ -1299,13 +1285,9 @@ class Interfacer():
                     # -- if we want to place, then we use the *post-grasp* given by UTAMP
                     # -- if we want to pick , then we use the *pre-grasp* given by UTAMP
                     success = self.ompl_compute(
-                        None,
-                        (post_grasp if gripper_action == 0 else pre_grasp),
-                        algorithm,
-                        num_ompl_attempts,
-                        max_compute,
-                        max_simplify,
-                        len_path
+                        target_pose=(post_grasp if gripper_action == 0 else pre_grasp),
+                        target_object=None,
+                        ompl_args=ompl_args,
                     )
                 else:
                     success = self.spline_path_planning((post_grasp if gripper_action == 0 else pre_grasp), num_ompl_attempts)
@@ -1323,7 +1305,7 @@ class Interfacer():
 
             traj_move_down = self.generate_trajectory(
                 {'time': [0, 1], 'trajectory': [start, end]},
-                ntraj=50
+                ntraj=25
             )
 
             self.execute_trajectory(traj_move_down)
@@ -1335,7 +1317,7 @@ class Interfacer():
         # -- get the object handles for the gripper's attach point:
         obj_in_hand = self.get_object_in_hand()
 
-        if obj_in_hand > -1:
+        if obj_in_hand != -1:
             # -- this means that we want to move the gripper up to remove the object from the top of the below object's surface:
             start = self.sim.getObjectPosition(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObject(f'/{self.robot_name}')) + self.sim.getObjectOrientation(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObject(f'/{self.robot_name}'))
             # -- we want to move up by half the height of the object:
@@ -1365,10 +1347,10 @@ class Interfacer():
             self.sim.setInt32Signal('close_gripper', action)
 
     def generate_trajectory(
-            self,
-            keypoints: dict,
-            ntraj: int = 150,
-        ):
+        self,
+        keypoints: dict,
+        ntraj: int = 150,
+    ):
 
         # -- use cubic spline interpolation:
         cs = CubicSpline(sorted(list(set(keypoints['time']))), keypoints['trajectory'])
@@ -1377,10 +1359,10 @@ class Interfacer():
         return cs(xs)
 
     def execute_trajectory(
-            self,
-            traj: list[float],
-            gripper_action: int = -1,
-        ):
+        self,
+        traj: list[float],
+        gripper_action: int = -1,
+    ):
         robot_handle, gripper_handle = self.sim.getObject(f'/{self.robot_name}'), self.sim.getObject(f'/{self.robot_name}/target')
 
         self.sim_start()
@@ -1401,11 +1383,11 @@ class Interfacer():
     ############################################################
 
     def pick(
-            self,
-            target_object: str,
-            ompl_args: dict = {},
-            affordance: str = 'pick-top',
-        ):
+        self,
+        target_object: str,
+        ompl_args: dict = {},
+        affordance: str = 'pick-top',
+    ):
 
         print("-- executing 'pick' action...")
 
@@ -1476,11 +1458,11 @@ class Interfacer():
         return success
 
     def place(
-            self,
-            target_object: str,
-            ompl_args: dict = {},
-            affordance: str = 'place-top',
-        ):
+        self,
+        target_object: str,
+        ompl_args: dict = {},
+        affordance: str = 'place-top',
+    ):
 
         print("-- executing 'place' action...")
 
@@ -1528,11 +1510,11 @@ class Interfacer():
         return True
 
     def pour(
-            self,
-            source_container: str,
-            target_container: str,
-            ompl_args: dict = {},
-        ):
+        self,
+        source_container: str,
+        target_container: str,
+        ompl_args: dict = {},
+    ):
 
         start_time = time.time()
 
@@ -1594,262 +1576,14 @@ class Interfacer():
         return True
 
 
-class UTAMP:
-    def __init__(
-            self,
-            config_fpath: str = 'utamp.config.json',
-        ):
-        try:
-            self.cnx = sql.connect(**json.load(open(config_fpath, 'r')))
-        except FileNotFoundError:
-            print(f'[UTAMP] : Error with config file for UTAMP connection (no file found at "{config_fpath}")!')
-            sys.exit()
-        self.cnx.autocommit = True
-        self.cursor = self.cnx.cursor(buffered=True)
-
-    def parse_server_output(
-            self,
-            str_actions: str,
-        ):
-
-        # -- split the string based on semi-colons:
-        str_actions = str_actions.split(':')
-        time, traj = [], []
-        gripper_action = None
-        for t in range(3):
-            coordinates = []
-            for S in range(len(str_actions)):
-                if f't_{t+1}' in str_actions[S]:
-                    time.append( eval(str(str_actions[S]).split(',')[1]) )
-                elif f'_{t+1}' in str_actions[S]:
-                    coordinates.append( eval(str(str_actions[S]).split(',')[1]) )
-                elif not gripper_action and 'gripper' in str(str_actions[S]):
-                    gripper_action = eval(str_actions[S].split(',')[1][:-1])
-
-            if coordinates:
-                traj.append(coordinates)
-
-        keypoints = {
-            'time': time,
-            'trajectory': traj
-        }
-
-        return keypoints, gripper_action
-
-    def plan_and_execute(
-            self,
-            sim_interfacer: Type[Interfacer],
-            goals_for_utamp: list = [],
-            verbose: bool = False,
-            pick_from_top: bool = True,
-            num_ompl_attempts: int = 3,
-            algorithm: str = 'RRTConnect',
-            max_compute: int = 5,
-            max_simplify: int = 5,
-            path_plan_method: int = 1,
-            len_path: int = 0,
-        ) -> bool:
-
-        cnx, cursor = self.cnx, self.cursor
-
-        # -- parse through the goal predicates and format it as a string needed for UTAMP:
-        obj_to_goals = {}
-
-        for P in goals_for_utamp:
-            # -- we want to get strings in the required format for the UTAMP system:
-            pred_parts = P[1:-1].split(" ")
-            if len(pred_parts) < 3:
-                continue
-
-            if bool(set(pred_parts[1:]).intersection(set(["hand", "table"]))):
-                # -- ignore any references to the hand or the table -- this is being handled by UTAMP.
-                continue
-
-            if pred_parts[1] not in obj_to_goals:
-                obj_to_goals[pred_parts[1]] = []
-
-            # -- format all the predicates in the string format indicated by Alejandro:
-            obj_to_goals[pred_parts[1]].append(f'{pred_parts[0]},{pred_parts[2]}')
-
-        # -- post-process the goal states to identify any objects that should have "air" on it:
-        for O in obj_to_goals:
-            on_found = False
-            for P in obj_to_goals[O]:
-                if 'on,' in P:
-                    on_found = True
-
-            if not on_found:
-                obj_to_goals[O].append('on,air')
-
-        utamp_goal_string = str()
-        for O in obj_to_goals:
-            utamp_goal_string += f'{O}:{":".join(obj_to_goals[O])};'
-
-        # -- this adds constraint to only pick objects from the top:
-        if pick_from_top:
-            utamp_goal_string += "constraints:placefromabove,1;"
-
-        vars_to_insert = {
-            'user_id': 51,
-            'goal': utamp_goal_string,
-            'objects': 'n/a',
-            'actions': 'n/a',
-            'status': 0,
-        }
-
-        sql_command = f'UPDATE utamp_data SET status = -1 WHERE user_id = {vars_to_insert["user_id"]}'
-        cursor.execute(sql_command, vars_to_insert)
-        cnx.commit()
-
-        sql_command = f'UPDATE utamp_data SET status = 0, goal = "{vars_to_insert["goal"]}" WHERE user_id = {vars_to_insert["user_id"]}'
-        cursor.execute(sql_command, vars_to_insert)
-        cnx.commit()
-
-        sql_command = ("SELECT * from utamp_data")
-        cursor.execute(sql_command)
-
-        if verbose:
-            for user_id, goal, objects, actions, _, status, msg in cursor:
-                print('user', user_id)
-                print(goal)
-                print(objects)
-                print(actions)
-                print(status)
-                print(msg)
-                print()
-
-        # NOTE: status numbers:
-        # Status	Meaning
-        # -1	    Waiting for goal (updated by Server).
-        #  0	    Goal/Sensing/Execution request concluded (updated by Client).
-        #  1	    Execution request (updated by Server).
-        #  2	    Execution in progress (updated by Client).
-        #  3	    Execution failed (updated by Client).
-        # 10	    Sensing request (updated by Server).
-        # 20	    Sensing in progress (updated by Client).
-        # 30	    Sensing failed (updated by Client).
-        status = 0
-
-        print(f"\n{'*' * 10} UTAMP CLIENT/SERVER INTERACTION {'*' * 10}\n")
-
-        print(f" -- goals sent to utamp:\t{utamp_goal_string}\n")
-
-        print('UTAMP interactions:')
-
-        last_status = None
-
-        while status > -1:
-            sql_command = ("SELECT status, msg from utamp_data where user_id = 51")
-            cursor.execute(sql_command)
-            status, msg = cursor.fetchone()
-
-            sql_command = ("SELECT status from utamp_data where user_id = 51")
-
-            if last_status != (status, msg):
-                print(f'status {status}:\t{msg}')
-                last_status = (status, msg)
-
-            if status == 1:
-                # -- execution request:
-                status = 2
-                sql_command = f'UPDATE utamp_data SET status = {status} WHERE user_id = 51'
-                cursor.execute(sql_command)
-                # print('performing execution...')
-
-                sql_command = ("SELECT actions from utamp_data where user_id = 51")
-                cursor.execute(sql_command)
-                str_actions = cursor.fetchone()[0]
-
-                # -- we will parse the output given by the UTAMP server...
-                keypoints, end_effector = self.parse_server_output(str_actions)
-                # ... and then we will perform path planning with OMPL:
-                sim_interfacer.execute_utamp(
-                    keypoints['trajectory'][1:],
-                    end_effector,
-                    algorithm,
-                    num_ompl_attempts,
-                    max_compute,
-                    max_simplify,
-                    len_path,
-                    path_plan_method,
-                )
-
-                status = 0
-                sql_command = f'UPDATE utamp_data SET status = {status} WHERE user_id = 51'
-                cursor.execute(sql_command)
-
-            if status == 10:
-                # -- sensing request:
-                status = 20
-
-            if status == 20:
-                sql_command = f'UPDATE utamp_data SET status = {status} WHERE user_id = 51'
-                cursor.execute(sql_command)
-
-                str_objects = self.perform_sensing(method=2, verbose=verbose)
-                if verbose:
-                    print(str_objects)
-
-                for obj in self.objects_in_sim:
-                    if obj not in str_objects:
-                        print(obj)
-
-                status = 0
-                sql_command = f'UPDATE utamp_data SET objects = "{str_objects}", status = {status} WHERE user_id = 51'
-                cursor.execute(sql_command)
-
-        if status == -1:
-            return True
-
-        return False
-
-
-def get_quaternion_from_euler(roll, pitch, yaw):
-    """
-    Convert an Euler angle to a quaternion.
-    Input
-    :param roll: The roll (rotation around x-axis) angle in radians.
-    :param pitch: The pitch (rotation around y-axis) angle in radians.
-    :param yaw: The yaw (rotation around z-axis) angle in radians.
-    Output
-    :return qx, qy, qz, qw: The orientation in quaternion [x,y,z,w] format
-    """
-    # YZX
-    # qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
-    # qy = np.cos(roll/2) * np.sin(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.cos(pitch/2) * np.sin(yaw/2)
-    # qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
-    # qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
-    # XYZ
-    qx = np.sin(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) + np.cos(roll / 2) * np.sin(pitch / 2) * np.sin(yaw / 2)
-    qy = np.cos(roll / 2) * np.sin(pitch / 2) * np.cos(yaw / 2) - np.sin(roll / 2) * np.cos(pitch / 2) * np.sin(yaw / 2)
-    qz = np.cos(roll / 2) * np.cos(pitch / 2) * np.sin(yaw / 2) + np.sin(roll / 2) * np.sin(pitch / 2) * np.cos(yaw / 2)
-    qw = np.cos(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) - np.sin(roll / 2) * np.sin(pitch / 2) * np.sin(yaw / 2)
-
-    return [qw, qx, qy, qz]
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--goal",
-        type=str, default="None",
-        help="This specifies a set of goal predicates as a string."
-    )
     parser.add_argument(
         "--scene",
         type=str,
         default='./utamp/scenes/panda_stacking.ttt',
         help="This specifies a set of goal predicates as a string."
     )
+
     args = parser.parse_args()
-
-    if not eval(args.goal):
-        # 'blockc:on,blocka:under,blockb;blocka:on,air:under,blockc;blockb:on,blockc;'
-        goals_for_utamp = [
-            "(on blockc blocka)",
-            "(under blocka blockc)",
-            "(on blocka air)",
-        ]
-
     driver = Interfacer(scene_file_name=args.scene)
-    utamp_client = UTAMP(); utamp_client.plan_and_execute(driver, goals_for_utamp=eval(args.goal))
