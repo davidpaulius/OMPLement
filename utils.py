@@ -1074,7 +1074,6 @@ class Interfacer():
     def spline_path_planning(
         self,
         goal_pose: list[float],
-        num_ompl_attempts: int  = 5,
     ) -> bool:
 
         ompl_script = self.sim.getScript(self.sim.scripttype_simulation, self.sim.getObject('/OMPLement'))
@@ -1180,10 +1179,10 @@ class Interfacer():
             for goal in goal_poses:
                 if method == 1:
                     # -- use the OMPL-based path planning method:
-                    success = self.ompl_compute(
-                        target_object,
-                        goal,
-                        ompl_args,
+                    success = self.ompl_execute(
+                        target_object=target_object,
+                        target_pose=goal,
+                        ompl_args=ompl_args,
                     )
                 else:
                     # -- use a simpler spline path planning method:
@@ -1278,19 +1277,20 @@ class Interfacer():
 
         # -- we will try to find configs with OMPL and find a collision-avoiding plan up to a certain number of times
         success = False
-        if gripper_action == 0:
-            for _ in range(3):
-                if method == 1:
-                    # NOTE: here's how we decide on the goal pose:
-                    # -- if we want to place, then we use the *post-grasp* given by UTAMP
-                    # -- if we want to pick , then we use the *pre-grasp* given by UTAMP
-                    success = self.ompl_compute(
-                        target_pose=(post_grasp if gripper_action == 0 else pre_grasp),
-                        target_object=None,
-                        ompl_args=ompl_args,
-                    )
-                else:
-                    success = self.spline_path_planning((post_grasp if gripper_action == 0 else pre_grasp), num_ompl_attempts)
+        for _ in range(3):
+            if method == 1:
+                # NOTE: here's how we decide on the goal pose:
+                # -- if we want to place, then we use the *post-grasp* given by UTAMP
+                # -- if we want to pick , then we use the *pre-grasp* given by UTAMP
+                success = self.ompl_execute(
+                    target_pose=(post_grasp if gripper_action == 0 else pre_grasp),
+                    target_object=None,
+                    ompl_args=ompl_args,
+                )
+            else:
+                success = self.spline_path_planning((post_grasp if gripper_action == 0 else pre_grasp))
+
+            if success: break
 
         # -- if for whatever reason the system failed, then we just
         if not success: return False

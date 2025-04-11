@@ -12,7 +12,7 @@ class UTAMPClient:
     def __init__(
         self,
         sim_interfacer: Type[Interfacer],
-        config_fpath: str = 'utamp.config.json',
+        config_fpath: str = 'utamp_config.json',
     ):
         try:
             self.cnx = sql.connect(**json.load(open(config_fpath, 'r')))
@@ -66,7 +66,7 @@ class UTAMPClient:
 
         for P in goals_for_utamp:
             # -- we want to get strings in the required format for the UTAMP system:
-            pred_parts = P[1:-1].split(" ")
+            pred_parts = P.replace("(", "").replace(")", "").split(" ")
             if len(pred_parts) < 3:
                 continue
 
@@ -93,6 +93,8 @@ class UTAMPClient:
         str_goal = str()
         for O in obj_to_goals:
             str_goal += f'{O}:{":".join(obj_to_goals[O])};'
+
+        return str_goal
 
 
     def perform_sensing(self) -> str:
@@ -258,6 +260,8 @@ class UTAMPClient:
 
         last_status = None
 
+        self.sim_interfacer.sim_start()
+
         while status > -1:
             sql_command = ("SELECT status, msg from utamp_data where user_id = 51")
             cursor.execute(sql_command)
@@ -282,6 +286,7 @@ class UTAMPClient:
 
                 # -- we will parse the output given by the UTAMP server...
                 keypoints, end_effector = self.parse_server_output(str_actions)
+
                 # ... and then we will perform path planning with OMPL:
                 self. sim_interfacer.execute_utamp(
                     goal_poses=keypoints['trajectory'][1:],
@@ -318,6 +323,7 @@ class UTAMPClient:
                 cursor.execute(sql_command)
 
         if status == -1:
+            self.sim_interfacer.sim_pause()
             return True
 
         return False
@@ -335,16 +341,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--scene",
         type=str,
-        default='./',
+        default='./panda_stacking.ttt',
         help="This specifies a set of goal predicates as a string."
     )
 
     args = parser.parse_args()
     if not eval(args.goal):
         utamp_goals = [
-            "(on blockc blocka)",
-            "(under blocka blockc)",
-            "(on blocka air)",
+            "(on D_block C_block)",
+            "(under C_block D_block)",
+            "(on C_block B_block)",
+            "(under B_block C_block)",
+            "(on B_block A_block)",
+            "(under A_block B_block)",
+            "(on A_block air)",
         ]
     else:
         utamp_goals = eval(args.goal)
@@ -355,7 +365,8 @@ if __name__ == "__main__":
             robot_name="Panda",
             robot_gripper="Panda_gripper",
         ),
-        config_fpath='utamp.config.json',
+        config_fpath='utamp_config.json',
     )
 
     utamp_client.plan_and_execute(goals_for_utamp=utamp_goals)
+    print('la')
