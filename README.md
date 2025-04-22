@@ -1,5 +1,7 @@
-# OMPLement
+# OMPLement (
 Simplifying OMPL for CoppeliaSim (_because sifting through the tutorials and forums is hard enough_).
+I pronounce it as "complement" without the "c" (i.e., "OM-plee-ment").
+
 
 ## Overview
 
