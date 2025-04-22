@@ -900,30 +900,34 @@ class Interfacer():
         # NOTE: the sim must be started in order for this script function to work:
         self.sim_start()
 
-        path, _ = self.sim.callScriptFunction(
-            "ompl_path_planning",
-            self.ompl_script,
-            {
-                "robot": self.robot_name,
-                "goal": target_goal,
-                "ompl_algorithm": ompl_args["ompl_algorithm"],
-                "ompl_max_compute": ompl_args["ompl_max_compute"],
-                "ompl_max_simplify": ompl_args["ompl_max_simplify"],
-                "ompl_len_path": ompl_args["ompl_len_path"],
-                "ompl_state_resolution": ompl_args["ompl_state_resolution"],
-                "ompl_motion_constraint": ompl_args["ompl_motion_constraint"],
-                "ompl_use_state_validation": ompl_args["ompl_use_state_validation"],
-                "ompl_use_lua": ompl_args["ompl_use_lua"],
-                "ompl_pose_limits": ompl_args["ompl_pose_limits"],
-            },
-        )
+        try:
+            path, _ = self.sim.callScriptFunction(
+                "ompl_path_planning",
+                self.ompl_script,
+                {
+                    "robot": self.robot_name,
+                    "goal": target_goal,
+                    "ompl_algorithm": ompl_args["ompl_algorithm"],
+                    "ompl_max_compute": ompl_args["ompl_max_compute"],
+                    "ompl_max_simplify": ompl_args["ompl_max_simplify"],
+                    "ompl_len_path": ompl_args["ompl_len_path"],
+                    "ompl_state_resolution": ompl_args["ompl_state_resolution"],
+                    "ompl_motion_constraint": ompl_args["ompl_motion_constraint"],
+                    "ompl_use_state_validation": ompl_args["ompl_use_state_validation"],
+                    "ompl_use_lua": ompl_args["ompl_use_lua"],
+                    "ompl_pose_limits": ompl_args["ompl_pose_limits"],
+                },
+            )
+        except TypeError:
+            print("[OMPLement] : Error unpacking return values! Are you using the latest OMPLement?")
+            sys.exit()
 
         time.sleep(0.001)
 
         # -- remove the OMPL target object:
         self.sim.removeObjects([self.sim.getObject('/OMPL_target')])
 
-        self.sim_print(f'[FOON-TAMP]: plan{" not" if not bool(path) else ""} found!')
+        self.sim_print(f'[OMPLement] : plan{" not" if not bool(path) else ""} found!')
 
         return path
 
