@@ -920,6 +920,7 @@ class Interfacer():
             )
         except TypeError:
             print("[OMPLement] : Error unpacking return values! Are you using the latest OMPLement?")
+            print("\t-- Pull the latest changes from here: https://github.com/davidpaulius/OMPLement")
             sys.exit()
 
         time.sleep(0.001)

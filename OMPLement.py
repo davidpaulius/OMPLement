@@ -308,15 +308,15 @@ def stateValidationOrientation_python(config):
 
 
 def find_ik_config(args):
+    # -- parse all the arguments sent to this function and make them global variables (i.e., "self.XXX"):
+    if not self.robot or not self.robot_collection:
+        parse_args(args)
+
     # -- Prepare robot collection:
     self.robot_collection = sim.createCollection()
     sim.addItemToCollection(self.robot_collection, sim.handle_tree, self.robot, 0)
 
     collection_objs = [(x, sim.getObjectAlias(x)) for x in sim.getCollectionObjects(self.robot_collection)]
-    #print(collection_objs)
-    #for x, y in collection_objs:
-    #    print(y)
-    #    print(sim.getObjectInt32Param(x, sim.shapeintparam_respondable))
 
     # -- prepare an ik task (in order to be able to find configs that match specific end-effector poses):
     ikEnv = simIK.createEnvironment()
