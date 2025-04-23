@@ -539,6 +539,7 @@ def ompl_path_planning(args):
 
     # NOTE: the total distance gives us some kind of metric about how long the path is, which may be useful for interpolation:
     total_distance = -1
+    start_to_end = -1
 
     if bool(valid_config):
         # -- found a robot config that matches the desired pose!
