@@ -1353,7 +1353,8 @@ class Interfacer():
 
         self.sim_print(message)
         if action != -1:
-            self.sim.setInt32Signal('close_gripper', action)
+            # NOTE: by default, the robot's gripper name will be the name of the signal to set for grasping:
+            self.sim.setInt32Signal(self.robot_gripper, action)
 
     def generate_trajectory(
         self,
