@@ -901,7 +901,7 @@ class Interfacer():
         self.sim_start()
 
         try:
-            path, _ = self.sim.callScriptFunction(
+            ompl_solution = self.sim.callScriptFunction(
                 "ompl_path_planning",
                 self.ompl_script,
                 {
@@ -922,6 +922,10 @@ class Interfacer():
             print("[OMPLement] : Error unpacking return values! Are you using the latest OMPLement?")
             print("\t-- Pull the latest changes from here: https://github.com/davidpaulius/OMPLement")
             sys.exit()
+
+        else:
+            # NOTE: we will return several variables in a dictionary:
+            path = ompl_solution["path"]
 
         time.sleep(0.001)
 

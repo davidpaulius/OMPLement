@@ -485,8 +485,6 @@ def parse_args(args):
 
 
 def execute_trajectory_configs(data):
-    print(data)
-
     sim.setStepping(True)
     sim.step()
 
@@ -512,6 +510,7 @@ def execute_trajectory_configs(data):
 
     sim.setStepping(False)
     return True
+#end
 
 
 def ompl_path_planning(args):
@@ -539,7 +538,7 @@ def ompl_path_planning(args):
     final_path = []
 
     # NOTE: the total distance gives us some kind of metric about how long the path is, which may be useful for interpolation:
-    total_distance = 0
+    total_distance = -1
 
     if bool(valid_config):
         # -- found a robot config that matches the desired pose!
@@ -649,8 +648,11 @@ def ompl_path_planning(args):
                     final_path.append(path[x:x+len(self.joint_handles)])
 
                 # -- also compute the total length of the computed path:
-                """
+                total_distance = 0
+
+                # -- save original configuration:
                 tmp = getConfig_python()
+
                 for x in range(len(final_path) - 1):
                     # -- set the joints to configuration x:
                     setConfig_python(final_path[x])
@@ -661,6 +663,8 @@ def ompl_path_planning(args):
                     config_2 = sim.getObjectPose(self.tip, sim.handle_world)
 
                     total_distance += sim.getConfigDistance(config_1, config_2)
+
+                # -- reset back to original configuration:
                 setConfig_python(tmp)
 
                 # -- now let's do the total distance between first and last state:
@@ -676,8 +680,6 @@ def ompl_path_planning(args):
                 sim.addLog(sim.verbosity_default, f"[OMPLement] :  -- total distance travelled by path:\t{total_distance}")
                 sim.addLog(sim.verbosity_default, f"[OMPLement] :  -- ini to end configuration distance:\t{start_to_end}")
 
-                """
-
                 assert simOMPL.getPathStateCount(self.ompl_task,path) == len(final_path), "[OMPLement] : error in path rebuild?"
 
                 break
@@ -688,4 +690,10 @@ def ompl_path_planning(args):
     else:
         sim.addLog(sim.verbosity_scriptwarnings, "[OMPLement] : no configuration found!")
 
-    return final_path, total_distance
+    return {
+        "path": final_path,
+        "total_distance": total_distance,
+        "ini_to_end_distance": start_to_end,
+    }
+
+#end

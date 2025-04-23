@@ -1,5 +1,6 @@
 import sys
 import json
+import time
 import argparse
 import mysql.connector as sql
 
@@ -58,13 +59,13 @@ class UTAMPClient:
 
     def encode_goal(
         self,
-        goals_for_utamp: list[str],
+        utamp_goals: list[str],
     ) -> str:
 
         # -- parse through the goal predicates and format it as a string needed for UTAMP:
         obj_to_goals = {}
 
-        for P in goals_for_utamp:
+        for P in utamp_goals:
             # -- we want to get strings in the required format for the UTAMP system:
             pred_parts = P.replace("(", "").replace(")", "").split(" ")
             if len(pred_parts) < 3:
@@ -199,33 +200,44 @@ class UTAMPClient:
 
     def plan_and_execute(
         self,
-        goals_for_utamp: list = [],
+        utamp_goals: list = [],
+        utamp_constraints: list = [],
         path_planning_method: int = 1, # 1 -- OMPL, not 1 -- spline
         verbose: bool = False,
     ) -> bool:
 
         cnx, cursor = self.cnx, self.cursor
 
-        # ENCODE str_goal
-        str_goal = self.encode_goal(goals_for_utamp)
-
-        vars_to_insert = {
+        utamp_args = {
             'user_id': 51,
-            'goal': str_goal,
+            'goal': self.encode_goal(utamp_goals), # ENCODE str_goal
             'objects': 'n/a',
             'actions': 'n/a',
             'status': 0,
         }
 
-        sql_command = f'UPDATE utamp_data SET status = -1 WHERE user_id = {vars_to_insert["user_id"]}'
-        cursor.execute(sql_command, vars_to_insert)
+        for constraint in utamp_constraints:
+            utamp_args["goal"] += constraint
+
+        sql_command = f'UPDATE utamp_data SET status = -1 WHERE user_id = {utamp_args["user_id"]}'
+        cursor.execute(sql_command, utamp_args)
         cnx.commit()
 
+        time.sleep(0.5)
+
         # UPDATE db.table SET goal = 'str_goal' WHERE id=USERID
-        # UPDATE db.table SET status = 0 WHERE id=USERID (Goal provided)
-        sql_command = f'UPDATE utamp_data SET status = 0, goal = "{vars_to_insert["goal"]}" WHERE user_id = {vars_to_insert["user_id"]}'
-        cursor.execute(sql_command, vars_to_insert)
+        sql_command = f'UPDATE utamp_data SET goal = "{utamp_args["goal"]}" WHERE user_id = {utamp_args["user_id"]}'
+        cursor.execute(sql_command, utamp_args)
         cnx.commit()
+
+        time.sleep(0.5)
+
+        # UPDATE db.table SET status = 0 WHERE id=USERID (Goal provided)
+        sql_command = f'UPDATE utamp_data SET status = 0 WHERE user_id = {utamp_args["user_id"]}'
+        cursor.execute(sql_command, utamp_args)
+        cnx.commit()
+
+        time.sleep(0.5)
 
         sql_command = ("SELECT * from utamp_data")
         cursor.execute(sql_command)
@@ -254,7 +266,7 @@ class UTAMPClient:
 
         print(f"\n{'*' * 10} UTAMP CLIENT/SERVER INTERACTION {'*' * 10}\n")
 
-        print(f" -- goals sent to utamp:\t{str_goal}\n")
+        print(f" -- goals sent to utamp:\t{utamp_args['goal']}\n")
 
         print('UTAMP interactions:')
 
@@ -368,5 +380,8 @@ if __name__ == "__main__":
         config_fpath='utamp_config.json',
     )
 
-    utamp_client.plan_and_execute(goals_for_utamp=utamp_goals)
+    utamp_client.plan_and_execute(
+        utamp_goals=utamp_goals,
+        constraints=["constraints:placefromabove,1;"],
+    )
     print('la')
