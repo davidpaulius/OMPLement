@@ -1312,6 +1312,10 @@ class Interfacer():
             start = self.sim.getObjectPosition(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObject(f'/{self.robot_name}')) + self.sim.getObjectOrientation(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObject(f'/{self.robot_name}'))
             end = post_grasp[:3] + list(start[3:])
 
+            # -- try to move up a little bit based on the length of the fingertip:
+            fingertip_handle = self.sim.getObject(f'/{self.robot_name}_leftfinger_respondable', {"noError": True})
+            end[2] += (self.sim.getObjectFloatParam(fingertip_handle, self.sim.objfloatparam_objbbox_max_z)) if fingertip_handle != -1 else 0.0
+
             traj_move_down = self.generate_trajectory(
                 {'time': [0, 1], 'trajectory': [start, end]},
                 ntraj=25
@@ -1326,12 +1330,12 @@ class Interfacer():
         # -- get the object handles for the gripper's attach point:
         obj_in_hand = self.get_object_in_hand()
 
-        if obj_in_hand != -1:
+        if gripper_action == 1:
             # -- this means that we want to move the gripper up to remove the object from the top of the below object's surface:
             start = self.sim.getObjectPosition(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObject(f'/{self.robot_name}')) + self.sim.getObjectOrientation(self.sim.getObject(f'/{self.robot_name}/target'), self.sim.getObject(f'/{self.robot_name}'))
             # -- we want to move up by half the height of the object:
             end = list(start)
-            end[2] += self.sim.getObjectFloatParam(obj_in_hand, self.sim.objfloatparam_objbbox_max_z)
+            end[2] += self.sim.getObjectFloatParam(obj_in_hand, self.sim.objfloatparam_objbbox_max_z) if obj_in_hand != -1 else 0.025
 
             traj_move_up = self.generate_trajectory(
                 {'time': [0, 1], 'trajectory': [start, end]},

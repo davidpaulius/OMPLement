@@ -382,6 +382,5 @@ if __name__ == "__main__":
 
     utamp_client.plan_and_execute(
         utamp_goals=utamp_goals,
-        constraints=["constraints:placefromabove,1;"],
+        utamp_constraints=["constraints:placefromabove,1;"],
     )
-    print('la')
