@@ -891,7 +891,7 @@ class Interfacer():
         if "ompl_use_state_validation" not in ompl_args:
             ompl_args["ompl_use_state_validation"] = True
         if "ompl_use_lua" not in ompl_args:
-            ompl_args["ompl_use_lua"] = False
+            ompl_args["ompl_use_lua"] = True
         if "ompl_motion_constraint" not in ompl_args:
             ompl_args["ompl_motion_constraint"] = "free"
         if "ompl_pose_limits" not in ompl_args:
