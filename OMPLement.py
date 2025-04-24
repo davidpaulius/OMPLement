@@ -232,6 +232,7 @@ def sysCall_init():
     self.ompl_use_lua = True
     self.ompl_use_state_validation = True
     self.verbose = True
+    self.compute_distances = False
 
     if self.ompl_use_lua:
         sim.addLog(sim.verbosity_default, "[OMPLement] : Using Lua-based OMPL functions! (ompl_use_lua=True)")
@@ -644,52 +645,52 @@ def ompl_path_planning(args):
 
                 # NOTE: the path contains a Mx1 vector, which needs to be transformed to NxJ vector, where N = M/J.
                 # -- the final path will be stored as a NxJ matrix, where N = number of points in trajectory and J = number of joints.
-                final_path = []
                 for x in range(0, len(path), len(self.joint_handles)):
                     final_path.append(path[x:x+len(self.joint_handles)])
 
-                # -- also compute the total length of the computed path:
-                total_distance = 0
-
-                # -- save original configuration:
-                tmp = getConfig_python()
-
-                for x in range(len(final_path) - 1):
-                    # -- set the joints to configuration x:
-                    setConfig_python(final_path[x])
-                    config_1 = sim.getObjectPose(self.tip, sim.handle_world)
-
-                    # -- set the joints to configuration (x+1):
-                    setConfig_python(final_path[x+1])
-                    config_2 = sim.getObjectPose(self.tip, sim.handle_world)
-
-                    total_distance += sim.getConfigDistance(config_1, config_2)
-
-                # -- reset back to original configuration:
-                setConfig_python(tmp)
-
-                # -- now let's do the total distance between first and last state:
-                ini_config = sim.getObjectPose(self.tip, sim.handle_world)
-                setConfig_python(final_path[-1])
-                end_config = sim.getObjectPose(self.tip, sim.handle_world)
-
-                setConfig_python(tmp)
-
-                start_to_end = sim.getConfigDistance(ini_config, end_config)
-
-                sim.addLog(sim.verbosity_default, f"[OMPLement] : Length of path: {int(simOMPL.getPathStateCount(self.ompl_task,path))}")
-                sim.addLog(sim.verbosity_default, f"[OMPLement] :  -- total distance travelled by path:\t{total_distance}")
-                sim.addLog(sim.verbosity_default, f"[OMPLement] :  -- ini to end configuration distance:\t{start_to_end}")
-
                 assert simOMPL.getPathStateCount(self.ompl_task,path) == len(final_path), "[OMPLement] : error in path rebuild?"
 
-                break
+                sim.addLog(sim.verbosity_default, f"[OMPLement] : Length of path: {int(simOMPL.getPathStateCount(self.ompl_task,path))}")
 
+                # NOTE: computing the distances is a bit time consuming; use this only if necessary:
+                if self.compute_distances:
+                    # -- also compute the total length of the computed path:
+                    total_distance = 0
+
+                    # -- save original configuration:
+                    tmp = getConfig_python()
+
+                    for x in range(len(final_path)-1):
+                        # -- set the joints to configuration x:
+                        setConfig_python(final_path[x])
+                        config_1 = sim.getObjectPose(self.tip, sim.handle_world)
+
+                        # -- set the joints to configuration (x+1):
+                        setConfig_python(final_path[x+1])
+                        config_2 = sim.getObjectPose(self.tip, sim.handle_world)
+
+                        total_distance += sim.getConfigDistance(config_1, config_2)
+
+                    # -- reset back to original configuration:
+                    setConfig_python(tmp)
+
+                    # -- now let's do the total distance between first and last state:
+                    ini_config = sim.getObjectPose(self.tip, sim.handle_world)
+                    setConfig_python(final_path[-1])
+                    end_config = sim.getObjectPose(self.tip, sim.handle_world)
+
+                    setConfig_python(tmp)
+
+                    start_to_end = sim.getConfigDistance(ini_config, end_config)
+                    sim.addLog(sim.verbosity_default, f"[OMPLement] :  -- total distance travelled by path:\t{total_distance}")
+                    sim.addLog(sim.verbosity_default, f"[OMPLement] :  -- ini to end configuration distance:\t{start_to_end}")
+
+                break
 
         simOMPL.destroyTask(self.ompl_task)
 
     else:
-        sim.addLog(sim.verbosity_scriptwarnings, "[OMPLement] : no configuration found!")
+        sim.addLog(sim.verbosity_scriptwarnings, "[OMPLement] : no solution found!")
 
     return final_path
 

@@ -304,6 +304,11 @@ class UTAMPClient:
                     goal_poses=keypoints['trajectory'][1:],
                     gripper_action=end_effector,
                     method=path_planning_method,
+                    ompl_args={
+                        "ompl_algorithm": "RRTConnect",
+                        "ompl_state_resolution": float("5.0e-3"),
+                        "ompl_use_lua": True,
+                    }
                 )
 
                 status = 0

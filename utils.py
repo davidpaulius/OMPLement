@@ -771,7 +771,7 @@ class Interfacer():
                         if 'side' in affordance:
                             goal_pose_copy[3:] = self.sim.buildPose(goal_pose[:3], [orientation[0], (math.pi/2) + angular_offset, rotate])[3:]
                         elif 'top' in affordance:
-                            goal_pose_copy[3:] = self.sim.buildPose(goal_pose[:3], [-(math.pi) + rotate, orientation[1], orientation[2] + angular_offset])[3:]
+                            goal_pose_copy[3:] = self.sim.buildPose(goal_pose[:3], [-(math.pi) + rotate, -(orientation[1]), -(orientation[2] + angular_offset)])[3:]
 
                         candidate_goal_poses.append(goal_pose_copy)
 
@@ -798,7 +798,9 @@ class Interfacer():
                         + (self.sim.getObjectFloatParam(fingertip_handle, self.sim.objfloatparam_objbbox_max_z)) if fingertip_handle != -1 else 0.0
                     # * (1.5 if target_object not in ["table", "worksurface"] else 1.25)
 
-                    goal_pose[3:] = self.sim.getObjectPose(target, robot)[3:]
+                    # goal_pose[3:] = self.sim.getObjectPose(target, robot)[3:]
+                    orientation = self.sim.getObjectOrientation(goal, robot)
+                    goal_pose[3:] = self.sim.buildPose(goal_pose[:3], [-(math.pi), -(orientation[1]), -(orientation[2])])[3:]
 
                     candidate_goal_poses.append(goal_pose)
 

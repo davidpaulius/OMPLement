@@ -53,6 +53,8 @@ for x in range(1, len(all_blocks)):
         },
         affordance='place-top')
 
+sim_interfacer.return_home()
+
 sim_interfacer.sim_pause()
 
 pass
