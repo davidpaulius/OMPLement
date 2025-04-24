@@ -75,7 +75,7 @@ class Interfacer():
         self.sim.setInt32Param(self.sim.intparam_idle_fps, 0)
 
         # -- make sure that the gripper is opened (i.e., set the signal to value of 1):
-        self.sim.setInt32Signal('close_gripper', 0)
+        self.sim.setInt32Signal(self.robot_gripper, 0)
 
         return True
 
@@ -901,7 +901,7 @@ class Interfacer():
         self.sim_start()
 
         try:
-            ompl_solution = self.sim.callScriptFunction(
+            path = self.sim.callScriptFunction(
                 "ompl_path_planning",
                 self.ompl_script,
                 {
@@ -922,10 +922,6 @@ class Interfacer():
             print("[OMPLement] : Error unpacking return values! Are you using the latest OMPLement?")
             print("\t-- Pull the latest changes from here: https://github.com/davidpaulius/OMPLement")
             sys.exit()
-
-        else:
-            # NOTE: we will return several variables in a dictionary:
-            path = ompl_solution["path"]
 
         time.sleep(0.001)
 
@@ -1176,6 +1172,7 @@ class Interfacer():
         target_object: str,
         ompl_args: dict,
         gripper_action: int,
+        draw_path: bool = True,
         method: int = 1, # 1 :- OMPL, not(1) :- spline interpolation
     ) -> bool:
 
@@ -1192,6 +1189,7 @@ class Interfacer():
                         target_object=target_object,
                         target_pose=goal,
                         ompl_args=ompl_args,
+                        draw_path=draw_path,
                     )
                 else:
                     # -- use a simpler spline path planning method:
@@ -1274,6 +1272,7 @@ class Interfacer():
         goal_poses: list[float],
         gripper_action: int,
         ompl_args: dict = {},
+        draw_path: bool = True,
         method: int = 1, # 1 :- OMPL, not(1) :- spline interpolation
     ) -> bool:
 
@@ -1295,6 +1294,7 @@ class Interfacer():
                     target_pose=(post_grasp if gripper_action == 0 else pre_grasp),
                     target_object=None,
                     ompl_args=ompl_args,
+                    draw_path=draw_path,
                 )
             else:
                 success = self.spline_path_planning((post_grasp if gripper_action == 0 else pre_grasp))

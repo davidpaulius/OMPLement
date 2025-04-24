@@ -691,10 +691,6 @@ def ompl_path_planning(args):
     else:
         sim.addLog(sim.verbosity_scriptwarnings, "[OMPLement] : no configuration found!")
 
-    return {
-        "path": final_path,
-        "total_distance": total_distance,
-        "ini_to_end_distance": start_to_end,
-    }
+    return final_path
 
 #end
