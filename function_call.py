@@ -33,10 +33,10 @@ for x in range(1, len(all_blocks)):
     success = sim_interfacer.pick(
         target_object=all_blocks[x],
         ompl_args={
-            "ompl_state_resolution": float("2.5e-3"),
+            "ompl_state_resolution": float("3.0e-3"),
             "ompl_use_lua": True,
             "ompl_algorithm": "RRTConnect",
-            "ompl_motion_constraint": "free",
+            "ompl_orientation_constraint": None,
             "ompl_max_compute": 15,
             "ompl_max_simplify": 15,
         })
@@ -44,10 +44,13 @@ for x in range(1, len(all_blocks)):
     success = sim_interfacer.place(
         target_object=all_blocks[x-1],
         ompl_args={
-            "ompl_state_resolution": float("2.5e-3"),
+            "ompl_state_resolution": float("3.0e-3"),
             "ompl_use_lua": True,
             "ompl_algorithm": "RRTConnect",
-            "ompl_motion_constraint": "free",
+            # NOTE: set "ompl_orientation_constraint" to None if you don't care about the orientation of gripper during place: 
+            # "ompl_orientation_constraint": None,
+            "ompl_orientation_constraint": "z",
+            "ompl_orientation_threshold": 0.9,
             "ompl_max_compute": 15,
             "ompl_max_simplify": 15,
         },

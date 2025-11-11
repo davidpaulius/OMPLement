@@ -872,6 +872,7 @@ class Interfacer():
         if "ompl_algorithm" not in ompl_args:
             ompl_args["ompl_algorithm"] = "RRTConnect"
         try:
+            print(f"[OMPLement] : Trying to use '{ompl_args['ompl_algorithm']}' algorithm...")
             ompl_args['ompl_algorithm'] = eval(f"self.simOMPL.Algorithm.{ompl_args['ompl_algorithm']}")
         except AssertionError:
             print(f"WARNING: {ompl_args['ompl_algorithm']} is not a valid algorithm!\n"
@@ -892,10 +893,15 @@ class Interfacer():
             ompl_args["ompl_state_resolution"] = float("5.0e-3")
         if "ompl_use_state_validation" not in ompl_args:
             ompl_args["ompl_use_state_validation"] = True
+        # NOTE: it is *strongly* recommended to use the Lua version of state validation:
         if "ompl_use_lua" not in ompl_args:
             ompl_args["ompl_use_lua"] = True
-        if "ompl_motion_constraint" not in ompl_args:
-            ompl_args["ompl_motion_constraint"] = "free"
+        # NOTE: must be None or some string containing only "x", "y", "z":
+        if "ompl_orientation_constraint" not in ompl_args:
+            ompl_args["ompl_orientation_constraint"] = None
+        #NOTE: the threshold must be between 0 and 1 (since we are computing a dot product):
+        if "ompl_orientation_threshold" not in ompl_args: 
+            ompl_args["ompl_orientation_threshold"] = 0.95
         if "ompl_pose_limits" not in ompl_args:
             ompl_args["ompl_pose_limits"] = None
 
@@ -903,6 +909,7 @@ class Interfacer():
         self.sim_start()
 
         try:
+            # some versions of the script also return the total distance
             path = self.sim.callScriptFunction(
                 "ompl_path_planning",
                 self.ompl_script,
@@ -914,10 +921,12 @@ class Interfacer():
                     "ompl_max_simplify": ompl_args["ompl_max_simplify"],
                     "ompl_len_path": ompl_args["ompl_len_path"],
                     "ompl_state_resolution": ompl_args["ompl_state_resolution"],
-                    "ompl_motion_constraint": ompl_args["ompl_motion_constraint"],
                     "ompl_use_state_validation": ompl_args["ompl_use_state_validation"],
                     "ompl_use_lua": ompl_args["ompl_use_lua"],
                     "ompl_pose_limits": ompl_args["ompl_pose_limits"],
+                    # NOTE: change these for enforcing orientation constraints:
+                    "ompl_orientation_constraint": ompl_args["ompl_orientation_constraint"],
+                    "ompl_orientation_threshold": ompl_args["ompl_orientation_threshold"],
                 },
             )
         except TypeError:
@@ -956,7 +965,13 @@ class Interfacer():
         self.sim_start()
 
         # -- if set to true, we will draw the path in the simulation:
-        if draw_path: drawn_object = self.sim.callScriptFunction('visualizePath', self.ompl_script, path, [0.0, 1.0, 0.0])
+        if draw_path: 
+            drawn_object = self.sim.callScriptFunction(
+                'visualize_path_configs', 
+                self.ompl_script, 
+                path, 
+                [0.0, 1.0, 0.0],
+            )
 
         if ignore_dynamics:
             for obj in self.objects_in_sim:
@@ -979,7 +994,8 @@ class Interfacer():
                     self.sim.setObjectInt32Parameter(obj_handle, self.sim.shapeintparam_static, 0)
                     self.sim.setObjectInt32Parameter(obj_handle, self.sim.shapeintparam_respondable, 1)
 
-        if draw_path: self.sim.removeDrawingObject(drawn_object)
+        if draw_path: 
+            self.sim.removeDrawingObject(drawn_object)
 
         return True
 
